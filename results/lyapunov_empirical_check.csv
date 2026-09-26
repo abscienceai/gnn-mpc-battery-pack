@@ -1,0 +1,2 @@
+n_steps_total,n_steps_nonequilibrium,frac_aligned_pct,frac_descent_pct,beta_mean,beta_median,beta_p5,beta_p95,L_mean,L_median,L_p5,L_p95,frac_alpha_s_positive_pct,dt_h
+1159,1159,94.91,84.73,8.1645,4.5454,-0.0835,24.4804,16.6789,8.0524,2.823,65.4397,84.73,0.016667

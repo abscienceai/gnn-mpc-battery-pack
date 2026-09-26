@@ -1,0 +1,21 @@
+comparison,metric,mean_a,mean_b,mean_diff,t_stat,p_paired_t,w_stat,p_wilcoxon,cohens_d,significant_t,significant_w,metric_label
+GO vs CC-CV,final_SOC_imbalance,0.003889,0.032189,-0.0283,-17.5607,0.0,0.0,0.0,-3.2061,True,True,σ_SOC (fraction)
+GO vs CC-CV,final_T_gradient,0.033,0.183667,-0.150667,-10.4346,0.0,0.0,2e-06,-1.9051,True,True,ΔT (°C)
+GO vs CC-CV,charging_time_min,34.6,14.733333,19.866667,70.3066,0.0,0.0,2e-06,12.8362,True,True,Time (min)
+GO vs CC-CV,cumulative_aging,0.00099,0.000744,0.000246,39.3242,0.0,0.0,2e-06,7.1796,True,True,Aging proxy
+GO vs CC-CV,total_violations,0.0,0.033333,-0.033333,-1.0,0.325582,0.0,0.317311,-0.1826,False,False,Violations
+GO vs SimpleMPC,final_SOC_imbalance,0.003889,0.04068,-0.036791,-20.7514,0.0,0.0,0.0,-3.7887,True,True,σ_SOC (fraction)
+GO vs SimpleMPC,final_T_gradient,0.033,0.378333,-0.345333,-15.2496,0.0,0.0,2e-06,-2.7842,True,True,ΔT (°C)
+GO vs SimpleMPC,charging_time_min,34.6,30.5,4.1,11.8187,0.0,0.0,2e-06,2.1578,True,True,Time (min)
+GO vs SimpleMPC,cumulative_aging,0.00099,0.001001,-1.1e-05,-1.357,0.185244,171.5,0.209539,-0.2478,False,False,Aging proxy
+GO vs SimpleMPC,total_violations,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,False,False,Violations
+GO vs Proportional,final_SOC_imbalance,0.003889,0.001015,0.002874,12.2289,0.0,0.0,0.0,2.2327,True,True,σ_SOC (fraction)
+GO vs Proportional,final_T_gradient,0.033,0.369667,-0.336667,-15.3142,0.0,0.0,2e-06,-2.796,True,True,ΔT (°C)
+GO vs Proportional,charging_time_min,34.6,14.733333,19.866667,70.3066,0.0,0.0,2e-06,12.8362,True,True,Time (min)
+GO vs Proportional,cumulative_aging,0.00099,0.000744,0.000245,39.0393,0.0,0.0,2e-06,7.1276,True,True,Aging proxy
+GO vs Proportional,total_violations,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,False,False,Violations
+GO vs CC-CV-Balance,final_SOC_imbalance,0.003889,0.019458,-0.015569,-15.0556,0.0,0.0,0.0,-2.7488,True,True,σ_SOC (fraction)
+GO vs CC-CV-Balance,final_T_gradient,0.033,0.215,-0.182,-13.4088,0.0,0.0,2e-06,-2.4481,True,True,ΔT (°C)
+GO vs CC-CV-Balance,charging_time_min,34.6,14.733333,19.866667,70.3066,0.0,0.0,2e-06,12.8362,True,True,Time (min)
+GO vs CC-CV-Balance,cumulative_aging,0.00099,0.000744,0.000246,39.1534,0.0,0.0,2e-06,7.1484,True,True,Aging proxy
+GO vs CC-CV-Balance,total_violations,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,False,False,Violations

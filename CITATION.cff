@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Graph-Guided Model Predictive Control for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs"
+type: software
+authors:
+  - family-names: Bingöl
+    given-names: Alper
+    orcid: "https://orcid.org/0009-0003-4437-2439"
+    email: alper1ton@gmail.com
+    affiliation: "Department of Physics, Faculty of Arts and Sciences, İnönü University, Malatya, Turkey"
+  - family-names: Soylu
+    given-names: Mücahit
+    orcid: "https://orcid.org/0000-0002-4114-1390"
+    affiliation: "Department of Software Engineering, Faculty of Engineering, İnönü University, Malatya, Turkey"
+  - family-names: Baheri
+    given-names: Ali
+    orcid: "https://orcid.org/0000-0002-5613-0192"
+    affiliation: "Department of Mechanical Engineering, Safe AI Lab, Rochester Institute of Technology, Rochester, NY, USA"
+repository-code: "https://github.com/abscienceai/gnn-mpc-battery-pack"
+license: MIT
+version: 1.0.0
+date-released: "2026-09-22"
+preferred-citation:
+  type: unpublished
+  title: "Graph-Guided Model Predictive Control for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs"
+  authors:
+    - family-names: Bingöl
+      given-names: Alper
+    - family-names: Soylu
+      given-names: Mücahit
+    - family-names: Baheri
+      given-names: Ali
+  year: 2026
+  notes: "Manuscript prepared for submission. This entry will be updated with the journal name, volume, pages, and DOI upon acceptance."

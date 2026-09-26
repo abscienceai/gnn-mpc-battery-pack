@@ -1,0 +1,160 @@
+{
+  "variants": {
+    "Full Model (GNN+MPC+CEM+Graph)": {
+      "n_episodes": 30,
+      "time_min": [
+        34.7,
+        1.6361
+      ],
+      "soc_imbalance": [
+        0.0041,
+        0.0014
+      ],
+      "T_max": [
+        25.2433,
+        0.0528
+      ],
+      "T_gradient": [
+        0.033,
+        0.0177
+      ],
+      "aging": [
+        0.001,
+        0.0
+      ],
+      "violations": [
+        0.0,
+        0.0
+      ]
+    },
+    "No Graph Edges (Node-only MLP)": {
+      "n_episodes": 30,
+      "time_min": [
+        44.0,
+        1.3904
+      ],
+      "soc_imbalance": [
+        0.0043,
+        0.0013
+      ],
+      "T_max": [
+        25.0827,
+        0.0115
+      ],
+      "T_gradient": [
+        0.012,
+        0.0048
+      ],
+      "aging": [
+        0.0012,
+        0.0
+      ],
+      "violations": [
+        0.0,
+        0.0
+      ]
+    },
+    "No MPC Horizon (Greedy H=1)": {
+      "n_episodes": 30,
+      "time_min": [
+        24.2,
+        0.6
+      ],
+      "soc_imbalance": [
+        0.0012,
+        0.0002
+      ],
+      "T_max": [
+        25.7023,
+        0.0964
+      ],
+      "T_gradient": [
+        0.1433,
+        0.0619
+      ],
+      "aging": [
+        0.0008,
+        0.0
+      ],
+      "violations": [
+        0.0,
+        0.0
+      ]
+    },
+    "No CEM (Random Action)": {
+      "n_episodes": 30,
+      "time_min": [
+        24.4,
+        1.0198
+      ],
+      "soc_imbalance": [
+        0.07,
+        0.0127
+      ],
+      "T_max": [
+        26.8087,
+        0.3907
+      ],
+      "T_gradient": [
+        1.033,
+        0.351
+      ],
+      "aging": [
+        0.0009,
+        0.0
+      ],
+      "violations": [
+        0.2,
+        0.5416
+      ]
+    },
+    "CC-CV (Rule-based)": {
+      "n_episodes": 30,
+      "time_min": [
+        12.3333,
+        0.4714
+      ],
+      "soc_imbalance": [
+        0.0316,
+        0.0083
+      ],
+      "T_max": [
+        26.9853,
+        0.1473
+      ],
+      "T_gradient": [
+        0.23,
+        0.1066
+      ],
+      "aging": [
+        0.0008,
+        0.0
+      ],
+      "violations": [
+        0.0333,
+        0.1795
+      ]
+    }
+  },
+  "degradation": {
+    "No Graph Edges (Node-only MLP)": {
+      "soc_imbalance_degradation_pct": 4.9,
+      "T_gradient_change": -0.021
+    },
+    "No MPC Horizon (Greedy H=1)": {
+      "soc_imbalance_degradation_pct": -70.7,
+      "T_gradient_change": 0.11
+    },
+    "No CEM (Random Action)": {
+      "soc_imbalance_degradation_pct": 1607.3,
+      "T_gradient_change": 1.0
+    },
+    "CC-CV (Rule-based)": {
+      "soc_imbalance_degradation_pct": 670.7,
+      "T_gradient_change": 0.197
+    }
+  },
+  "chemistry": "LFP",
+  "n_cells": 12,
+  "n_episodes": 30
+}

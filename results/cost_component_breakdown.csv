@@ -1,0 +1,7 @@
+component,lambda,raw_mean,weighted_mean,pct_of_total
+Time (indicator),4.0,1.0,4.0,80.73
+SOC imbalance,3.0,0.011334,0.034001,0.69
+Peak-temperature comfort,3.0,0.0,0.0,0.0
+Thermal gradient,3.0,0.306865,0.920594,18.58
+Aging proxy,2.0,2.8e-05,5.6e-05,0.0
+Violations,50.0,0.0,0.0,0.0

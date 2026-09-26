@@ -1,0 +1,17 @@
+{
+  "Ideal (no constraints)": {
+    "soc_imbalance_mean": 0.00553,
+    "time_min_mean": 34.4,
+    "violations_mean": 0.0
+  },
+  "Light HW constraints": {
+    "soc_imbalance_mean": 0.00363,
+    "time_min_mean": 32.9,
+    "violations_mean": 0.0
+  },
+  "Heavy HW constraints": {
+    "soc_imbalance_mean": 0.00364,
+    "time_min_mean": 34.9,
+    "violations_mean": 0.0
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "checkpoint": "pack_gnn_20260630_220402.pt",
+  "n_rollouts": 60,
+  "n_steps_per_rollout": 5,
+  "n_excluded_training_rows": 12,
+  "n_independent_pool_rows": 168,
+  "soc_mae_pct": 1.2751957401633263,
+  "soc_mae_pct_std": 0.4145639482885599,
+  "dT_key_used": "delta_T_pred",
+  "dT_mae_C": 0.1647178828716278,
+  "dT_mae_C_std": 0.06681036949157715,
+  "n_samples_evaluated": 300
+}

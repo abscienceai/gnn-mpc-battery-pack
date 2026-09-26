@@ -1,0 +1,17 @@
+# Core numerical / ML stack
+numpy>=1.24,<2.0
+torch>=2.4.0,<2.5.0
+pandas>=2.0
+scipy>=1.11
+
+# Plotting (figure generation)
+matplotlib>=3.7
+
+# Parquet I/O (ECM parameter storage)
+pyarrow>=14.0
+
+# Statistical tests
+statsmodels>=0.14
+
+# Tested environment (Appendix C of the manuscript):
+#   Python 3.11, Ubuntu 24.04, CUDA 12.1, PyTorch 2.4.1, NVIDIA L40S GPU

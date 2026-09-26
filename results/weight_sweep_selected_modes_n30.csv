@@ -1,0 +1,5 @@
+mode,w_time,w_gradient,w_violation,n_episodes,charge_time_min,charge_time_std,sigma_SOC_pct,sigma_SOC_std,T_max_C,delta_T_C,delta_T_std,aging_proxy_e4,violations,runtime_s
+Fast-safe,20,1,50.0,30,35.2667,1.5691,0.4639,0.1314,26.2333,0.0347,0.0153,10.0924,0.0,1914.4
+Balanced,8,3,50.0,30,36.5333,1.4996,0.4944,0.1346,26.228,0.0257,0.0118,10.338,0.0,1980.3
+Safety-first,4,5,50.0,30,38.4667,1.4996,0.4132,0.1409,26.2267,0.0197,0.0101,10.7214,0.0,2086.8
+Default,4,3,50.0,30,38.6333,1.663,0.3638,0.0874,26.2273,0.0185,0.0083,10.7582,0.0,2161.9

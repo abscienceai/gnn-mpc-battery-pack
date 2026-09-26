@@ -1,0 +1,414 @@
+{
+  "summary": {
+    "real": {
+      "soc_imbalance": [
+        0.13619444654425225,
+        0.0204629933131321
+      ],
+      "T_max": [
+        30.957218170271027,
+        0.6969564741603835
+      ],
+      "time_min": [
+        12.2,
+        0.6782329983125269
+      ]
+    },
+    "optimized": {
+      "soc_imbalance": [
+        0.004464500000000001,
+        0.0011764968125753676
+      ],
+      "T_max": [
+        25.264999999999997,
+        0.05064582904840208
+      ],
+      "time_min": [
+        34.25,
+        1.840516231930596
+      ]
+    },
+    "cccv": {
+      "soc_imbalance": [
+        0.029206,
+        0.007376731254424279
+      ],
+      "T_max": [
+        26.5265,
+        0.08713638734765189
+      ],
+      "time_min": [
+        14.85,
+        0.3570714214271425
+      ]
+    }
+  },
+  "raw": {
+    "real": [
+      {
+        "ep": 0,
+        "soc_imbalance": 0.15630668093866676,
+        "T_max": 31.263194163120875,
+        "time_min": 12.0
+      },
+      {
+        "ep": 1,
+        "soc_imbalance": 0.137913997892508,
+        "T_max": 31.0072680121505,
+        "time_min": 11.0
+      },
+      {
+        "ep": 2,
+        "soc_imbalance": 0.13065122947873367,
+        "T_max": 32.12481972123904,
+        "time_min": 12.0
+      },
+      {
+        "ep": 3,
+        "soc_imbalance": 0.16934684116931226,
+        "T_max": 32.13307564068854,
+        "time_min": 12.0
+      },
+      {
+        "ep": 4,
+        "soc_imbalance": 0.13590099267705863,
+        "T_max": 30.605540914882244,
+        "time_min": 13.0
+      },
+      {
+        "ep": 5,
+        "soc_imbalance": 0.11892273912345167,
+        "T_max": 30.64697237853821,
+        "time_min": 12.0
+      },
+      {
+        "ep": 6,
+        "soc_imbalance": 0.13979144909001887,
+        "T_max": 32.16845544178781,
+        "time_min": 12.0
+      },
+      {
+        "ep": 7,
+        "soc_imbalance": 0.13161438191186503,
+        "T_max": 30.636915421963835,
+        "time_min": 11.0
+      },
+      {
+        "ep": 8,
+        "soc_imbalance": 0.11831573470945028,
+        "T_max": 30.363871437140848,
+        "time_min": 13.0
+      },
+      {
+        "ep": 9,
+        "soc_imbalance": 0.14420784190636057,
+        "T_max": 30.52009634507297,
+        "time_min": 12.0
+      },
+      {
+        "ep": 10,
+        "soc_imbalance": 0.09994140326493706,
+        "T_max": 31.838865512547876,
+        "time_min": 13.0
+      },
+      {
+        "ep": 11,
+        "soc_imbalance": 0.12174239979379815,
+        "T_max": 30.903491142766264,
+        "time_min": 13.0
+      },
+      {
+        "ep": 12,
+        "soc_imbalance": 0.12047706515517217,
+        "T_max": 30.246550074358023,
+        "time_min": 12.0
+      },
+      {
+        "ep": 13,
+        "soc_imbalance": 0.1331057950955169,
+        "T_max": 29.582202267095674,
+        "time_min": 12.0
+      },
+      {
+        "ep": 14,
+        "soc_imbalance": 0.18638119800217123,
+        "T_max": 30.470475190217666,
+        "time_min": 13.0
+      },
+      {
+        "ep": 15,
+        "soc_imbalance": 0.1400748442447273,
+        "T_max": 30.819746425446244,
+        "time_min": 12.0
+      },
+      {
+        "ep": 16,
+        "soc_imbalance": 0.11811667750324686,
+        "T_max": 31.062031859034587,
+        "time_min": 11.0
+      },
+      {
+        "ep": 17,
+        "soc_imbalance": 0.13481540842200773,
+        "T_max": 30.200447454726714,
+        "time_min": 12.0
+      },
+      {
+        "ep": 18,
+        "soc_imbalance": 0.1168365664987689,
+        "T_max": 30.873581105942087,
+        "time_min": 13.0
+      },
+      {
+        "ep": 19,
+        "soc_imbalance": 0.169425684007273,
+        "T_max": 31.676762896700556,
+        "time_min": 13.0
+      }
+    ],
+    "optimized": [
+      {
+        "ep": 0,
+        "soc_imbalance": 0.00445,
+        "T_max": 25.26,
+        "time_min": 34.0
+      },
+      {
+        "ep": 1,
+        "soc_imbalance": 0.00422,
+        "T_max": 25.22,
+        "time_min": 35.0
+      },
+      {
+        "ep": 2,
+        "soc_imbalance": 0.00352,
+        "T_max": 25.29,
+        "time_min": 31.0
+      },
+      {
+        "ep": 3,
+        "soc_imbalance": 0.00584,
+        "T_max": 25.22,
+        "time_min": 37.0
+      },
+      {
+        "ep": 4,
+        "soc_imbalance": 0.00434,
+        "T_max": 25.3,
+        "time_min": 34.0
+      },
+      {
+        "ep": 5,
+        "soc_imbalance": 0.00613,
+        "T_max": 25.24,
+        "time_min": 34.0
+      },
+      {
+        "ep": 6,
+        "soc_imbalance": 0.00349,
+        "T_max": 25.31,
+        "time_min": 33.0
+      },
+      {
+        "ep": 7,
+        "soc_imbalance": 0.00169,
+        "T_max": 25.31,
+        "time_min": 32.0
+      },
+      {
+        "ep": 8,
+        "soc_imbalance": 0.00358,
+        "T_max": 25.33,
+        "time_min": 33.0
+      },
+      {
+        "ep": 9,
+        "soc_imbalance": 0.00516,
+        "T_max": 25.34,
+        "time_min": 33.0
+      },
+      {
+        "ep": 10,
+        "soc_imbalance": 0.00303,
+        "T_max": 25.18,
+        "time_min": 37.0
+      },
+      {
+        "ep": 11,
+        "soc_imbalance": 0.00573,
+        "T_max": 25.21,
+        "time_min": 35.0
+      },
+      {
+        "ep": 12,
+        "soc_imbalance": 0.004,
+        "T_max": 25.31,
+        "time_min": 34.0
+      },
+      {
+        "ep": 13,
+        "soc_imbalance": 0.005,
+        "T_max": 25.22,
+        "time_min": 35.0
+      },
+      {
+        "ep": 14,
+        "soc_imbalance": 0.0035,
+        "T_max": 25.3,
+        "time_min": 32.0
+      },
+      {
+        "ep": 15,
+        "soc_imbalance": 0.00647,
+        "T_max": 25.22,
+        "time_min": 36.0
+      },
+      {
+        "ep": 16,
+        "soc_imbalance": 0.00458,
+        "T_max": 25.17,
+        "time_min": 38.0
+      },
+      {
+        "ep": 17,
+        "soc_imbalance": 0.00611,
+        "T_max": 25.27,
+        "time_min": 36.0
+      },
+      {
+        "ep": 18,
+        "soc_imbalance": 0.00453,
+        "T_max": 25.27,
+        "time_min": 34.0
+      },
+      {
+        "ep": 19,
+        "soc_imbalance": 0.00392,
+        "T_max": 25.33,
+        "time_min": 32.0
+      }
+    ],
+    "cccv": [
+      {
+        "ep": 0,
+        "soc_imbalance": 0.02944,
+        "T_max": 26.52,
+        "time_min": 15.0
+      },
+      {
+        "ep": 1,
+        "soc_imbalance": 0.02144,
+        "T_max": 26.49,
+        "time_min": 15.0
+      },
+      {
+        "ep": 2,
+        "soc_imbalance": 0.0238,
+        "T_max": 26.36,
+        "time_min": 14.0
+      },
+      {
+        "ep": 3,
+        "soc_imbalance": 0.02364,
+        "T_max": 26.64,
+        "time_min": 15.0
+      },
+      {
+        "ep": 4,
+        "soc_imbalance": 0.03518,
+        "T_max": 26.55,
+        "time_min": 15.0
+      },
+      {
+        "ep": 5,
+        "soc_imbalance": 0.01738,
+        "T_max": 26.48,
+        "time_min": 15.0
+      },
+      {
+        "ep": 6,
+        "soc_imbalance": 0.03007,
+        "T_max": 26.6,
+        "time_min": 15.0
+      },
+      {
+        "ep": 7,
+        "soc_imbalance": 0.02413,
+        "T_max": 26.44,
+        "time_min": 15.0
+      },
+      {
+        "ep": 8,
+        "soc_imbalance": 0.02978,
+        "T_max": 26.64,
+        "time_min": 15.0
+      },
+      {
+        "ep": 9,
+        "soc_imbalance": 0.03151,
+        "T_max": 26.73,
+        "time_min": 15.0
+      },
+      {
+        "ep": 10,
+        "soc_imbalance": 0.04633,
+        "T_max": 26.43,
+        "time_min": 15.0
+      },
+      {
+        "ep": 11,
+        "soc_imbalance": 0.01753,
+        "T_max": 26.51,
+        "time_min": 15.0
+      },
+      {
+        "ep": 12,
+        "soc_imbalance": 0.03133,
+        "T_max": 26.6,
+        "time_min": 15.0
+      },
+      {
+        "ep": 13,
+        "soc_imbalance": 0.02955,
+        "T_max": 26.42,
+        "time_min": 15.0
+      },
+      {
+        "ep": 14,
+        "soc_imbalance": 0.04235,
+        "T_max": 26.44,
+        "time_min": 14.0
+      },
+      {
+        "ep": 15,
+        "soc_imbalance": 0.02708,
+        "T_max": 26.6,
+        "time_min": 15.0
+      },
+      {
+        "ep": 16,
+        "soc_imbalance": 0.03224,
+        "T_max": 26.52,
+        "time_min": 15.0
+      },
+      {
+        "ep": 17,
+        "soc_imbalance": 0.03992,
+        "T_max": 26.53,
+        "time_min": 15.0
+      },
+      {
+        "ep": 18,
+        "soc_imbalance": 0.02544,
+        "T_max": 26.53,
+        "time_min": 14.0
+      },
+      {
+        "ep": 19,
+        "soc_imbalance": 0.02598,
+        "T_max": 26.5,
+        "time_min": 15.0
+      }
+    ]
+  }
+}
