@@ -1,2 +1,5 @@
 data/raw_external
 data/processed/BatteryML/
+__pycache__/
+*.py[cod]
+results/submission_revision/*smoke*/

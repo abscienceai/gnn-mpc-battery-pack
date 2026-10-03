@@ -50,6 +50,8 @@ class CellState:
     Q_nom_Ah:  float   # Nominal capacity      [Ah]
     chemistry: str     = "LFP"
 
+    V_min_limit: float = 2.5
+    V_max_limit: float = 4.25
     def feature_vector(self) -> np.ndarray:
         """Node feature vector: [SOC, T_norm, SOH, V_term, R0, |I|, V_oc]"""
         return np.array([
@@ -69,8 +71,8 @@ class CellState:
             0.05 <= self.SOC <= 0.98 and
             self.T_C <= 45.0 and
             self.T_C >= -10.0 and
-            self.V_term <= 4.25 and
-            self.V_term >= 2.5
+            self.V_term <= self.V_max_limit and
+            self.V_term >= self.V_min_limit
         )
 
 

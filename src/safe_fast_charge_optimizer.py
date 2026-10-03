@@ -65,6 +65,13 @@ import torch
 
 
 
+from submission_revision_controllers import (
+    VoltageFeedbackCCCVController,
+    BalancedVoltageFeedbackCCCVController,
+    project_current_vector,
+    apply_dataset_voltage_limits,
+)
+
 def default_config():
     return {
         # Pack
@@ -77,7 +84,7 @@ def default_config():
 
         # Electrical limits
         "V_min":          2.50,
-        "V_max":          4.20,
+        "V_max":          None,    # resolved from processed dataset metadata
         "T_max":          45.0,
         "I_max_C":        3.0,    # max C-rate per cell
         "I_pack_max_C":   2.5,    # max pack-level average C-rate
@@ -153,83 +160,22 @@ def compute_cost(metrics: dict, cfg: dict,
 #  BASELINE CONTROLLERS
 # ═══════════════════════════════════════════════════════════════════════════
 
-class CCCVController:
+class CCCVController(VoltageFeedbackCCCVController):
     """
-    Standard CC-CV (Constant Current – Constant Voltage) charging.
-    All cells receive the same current. CV phase when any cell hits V_max.
+    Canonical CC-CV baseline.
+
+    Uses one-step physics voltage feedback and dataset-derived V_max.
     """
-    def __init__(self, cfg: dict):
-        self.cfg = cfg
-        self.cv_mode = False
-
-    def reset(self):
-        self.cv_mode = False
-
-    def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
-        n = pack.n_cells
-        Q_nom = pack.cells[0].Q_nom_Ah
-        I_cc = self.cfg["I_max_C"] * Q_nom   # CC current [A]
-
-        # Switch to CV if any cell near V_max or T_max
-        if any(c.V_term >= self.cfg["V_max"] - 0.05 or
-               c.T_C >= self.cfg["T_max"] - 2.0
-               for c in pack.cells):
-            self.cv_mode = True
-
-        if self.cv_mode:
-            # Taper: reduce current proportional to SOC distance to target
-            mean_soc = np.mean([c.SOC for c in pack.cells])
-            taper = max(1.0 - mean_soc / self.cfg["target_soc"], 0.05)
-            I = I_cc * taper
-        else:
-            I = I_cc
-
-        currents = np.full(n, I, dtype=np.float32)
-        I_pack_max = self.cfg["I_pack_max_C"] * Q_nom * n
-        pack_sum = currents.sum()
-        if pack_sum > I_pack_max:
-            currents = currents * (I_pack_max / pack_sum)
-        return currents.astype(np.float32)
+    pass
 
 
-class BalancedCCCVController:
+class BalancedCCCVController(BalancedVoltageFeedbackCCCVController):
     """
-    CC-CV with active balancing: cells with higher SOC get less current.
+    Canonical actively-balanced CC-CV baseline.
+
+    Uses the same voltage-feedback constraint as CC-CV.
     """
-    def __init__(self, cfg: dict):
-        self.cfg = cfg
-        self.cv_mode = False
-
-    def reset(self):
-        self.cv_mode = False
-
-    def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
-        Q_nom = pack.cells[0].Q_nom_Ah
-        I_base = self.cfg["I_max_C"] * Q_nom
-
-        socs = np.array([c.SOC for c in pack.cells])
-        mean_soc = float(np.mean(socs))
-
-        if any(c.V_term >= self.cfg["V_max"] - 0.05 for c in pack.cells):
-            self.cv_mode = True
-
-        if self.cv_mode:
-            taper = max(1.0 - mean_soc / self.cfg["target_soc"], 0.05)
-            I_base *= taper
-
-        # Balance: cells with lower SOC get more current (±20%)
-        soc_deviation = socs - mean_soc
-        balance_factor = 1.0 - np.clip(soc_deviation * 2.0, -0.2, 0.2)
-        currents = I_base * balance_factor
-
-        # Clip to limits
-        currents = np.clip(currents, 0.0, self.cfg["I_max_C"] * Q_nom)
-        I_pack_max = self.cfg["I_pack_max_C"] * Q_nom * len(pack.cells)
-        pack_sum = currents.sum()
-        if pack_sum > I_pack_max:
-            currents = currents * (I_pack_max / pack_sum)
-        return currents.astype(np.float32)
-
+    pass
 
 
 
@@ -300,12 +246,11 @@ class ProportionalController:
             return np.zeros(pack.n_cells, dtype=np.float32)
 
         currents = I_max * deficit / (deficit.max() + 1e-9)
-        currents = np.clip(currents, 0.0, I_max)
-        I_pack_max = self.cfg["I_pack_max_C"] * Q_nom * pack.n_cells
-        pack_sum = currents.sum()
-        if pack_sum > I_pack_max:
-            currents = currents * (I_pack_max / pack_sum)
-        return currents.astype(np.float32)
+        return project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -548,14 +493,12 @@ class GraphGuidedOptimizer:
         else:
             I_final = I_base
 
-        I_final = np.clip(I_final, 0.0, I_max)
-        # Re-enforce the pack-level current constraint after blending: the
-        # per-cell clip above does not by itself guarantee sum(I) <= I_pack_max.
-        pack_sum = I_final.sum()
-        if pack_sum > I_pack_max:
-            I_final = I_final * (I_pack_max / pack_sum)
-
-        return I_final.astype(np.float32)
+        # Shared actuator-feasibility projection used by all controllers.
+        return project_current_vector(
+            I_final,
+            pack,
+            self.cfg,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -569,11 +512,18 @@ def run_episode(pack: BatteryPackGraph, controller,
     Run one charging episode until target SOC or max_steps reached.
     Returns episode metrics dict.
     """
+    # Keep plant violation accounting and controller constraints identical.
+    for cell in pack.cells:
+        if hasattr(cell, "V_min_limit"):
+            cell.V_min_limit = float(cfg["V_min"])
+        if hasattr(cell, "V_max_limit"):
+            cell.V_max_limit = float(cfg["V_max"])
+
     controller.reset()
     history = {
         "SOC_mean": [], "SOC_imbalance": [], "T_max": [],
         "T_gradient": [], "aging_cost_cum": [], "n_violations": [],
-        "pack_voltage": [], "currents_mean": [],
+        "pack_voltage": [], "cell_voltage_max": [], "currents_mean": [],
     }
     aging_cum = 0.0
     violations_cum = 0
@@ -604,6 +554,9 @@ def run_episode(pack: BatteryPackGraph, controller,
         history["aging_cost_cum"].append(aging_cum)
         history["n_violations"].append(violations_cum)
         history["pack_voltage"].append(pack.pack_voltage())
+        history["cell_voltage_max"].append(
+            float(max(c.V_term for c in pack.cells))
+        )
         history["currents_mean"].append(float(np.mean(currents)))
 
         if verbose and step % 10 == 0:
@@ -626,6 +579,12 @@ def run_episode(pack: BatteryPackGraph, controller,
                                          np.min([c.T_C for c in pack.cells])), 2),
         "cumulative_aging":  round(aging_cum, 6),
         "total_violations":  violations_cum,
+        "peak_cell_voltage": round(
+            max(history["cell_voltage_max"])
+            if history["cell_voltage_max"]
+            else max(c.V_term for c in pack.cells),
+            6,
+        ),
         "wall_time_s":       round(elapsed, 2),
         "history":           history,
     }
@@ -641,6 +600,16 @@ def run_experiment(cfg: dict, ecm_parquet: Path,
     """
     Run n_episodes for each controller and aggregate results.
     """
+    cfg = apply_dataset_voltage_limits(
+        cfg,
+        repo_root=Path(__file__).resolve().parent.parent,
+    )
+
+    print(
+        f"  Voltage limits: {cfg['V_min']:.3f}--{cfg['V_max']:.3f} V "
+        f"[{cfg['voltage_limit_dataset']}; {cfg['voltage_limit_source']}]"
+    )
+
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
