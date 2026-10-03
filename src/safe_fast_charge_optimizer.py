@@ -488,17 +488,45 @@ class ProportionalController:
         pass
 
     def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
-        Q_nom = pack.cells[0].Q_nom_Ah
-        I_max = self.cfg["I_max_C"] * Q_nom
+        # Capacity-aware per-cell limits, consistent with all other
+        # canonical controllers and the shared actuator projection.
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        I_max = (
+            self.cfg["I_max_C"]
+            * Q_nom
+        )
+
         target = self.cfg["target_soc"]
 
-        socs = np.array([c.SOC for c in pack.cells])
-        deficit = np.maximum(target - socs, 0.0)
+        socs = np.asarray(
+            [c.SOC for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        deficit = np.maximum(
+            target - socs,
+            0.0,
+        )
 
         if deficit.sum() < 1e-6:
-            return np.zeros(pack.n_cells, dtype=np.float32)
+            return np.zeros(
+                pack.n_cells,
+                dtype=np.float32,
+            )
 
-        currents = I_max * deficit / (deficit.max() + 1e-9)
+        # Preserve the original interpretable policy:
+        # cells with the largest SOC deficit receive their own
+        # maximum allowable C-rate current.
+        currents = (
+            I_max
+            * deficit
+            / (deficit.max() + 1e-9)
+        )
+
         return project_current_vector(
             currents,
             pack,
