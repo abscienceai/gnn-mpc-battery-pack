@@ -346,6 +346,69 @@ class SimpleMPCController:
 
         return float(total_cost), physics_steps
 
+    def _physics_safety_filter(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+        n_bisection: int = 24,
+    ) -> np.ndarray:
+        """
+        One-step ECM/thermal safety filter for the final action.
+
+        This mirrors the final-action safety shield used by
+        GraphGuidedOptimizer so that the canonical comparison differs
+        in the rollout evaluator, not in post-optimisation safety handling.
+        """
+        proposed = project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
+
+        def feasible(scale: float) -> bool:
+            virtual_pack = deepcopy(pack)
+
+            metrics = virtual_pack.step(
+                proposed * float(scale),
+                dt=self.cfg["dt_s"],
+            )
+
+            return int(
+                metrics["n_violations"]
+            ) == 0
+
+        if feasible(1.0):
+            return proposed.astype(
+                np.float32
+            )
+
+        if not feasible(0.0):
+            return np.zeros_like(
+                proposed,
+                dtype=np.float32,
+            )
+
+        lo = 0.0
+        hi = 1.0
+
+        for _ in range(
+            int(n_bisection)
+        ):
+            mid = 0.5 * (
+                lo + hi
+            )
+
+            if feasible(mid):
+                lo = mid
+            else:
+                hi = mid
+
+        return project_current_vector(
+            proposed * lo,
+            pack,
+            self.cfg,
+        )
+
     def get_currents(
         self,
         pack: BatteryPackGraph,
@@ -465,10 +528,62 @@ class SimpleMPCController:
         self.last_final_mu = mu.copy()
         self.last_best_cost = selected_cost
 
-        return project_current_vector(
+        # CEM-selected direct-physics baseline.
+        I_base = project_current_vector(
             selected,
             pack,
             self.cfg,
+        )
+
+        # Match GraphGuidedOptimizer's charging-pressure mechanism.
+        # The only substantive difference is how the next SOC is predicted:
+        # here it comes directly from one ECM/thermal plant step rather than
+        # from PackGNN.
+        prediction_pack = deepcopy(pack)
+
+        prediction_metrics = prediction_pack.step(
+            I_base,
+            dt=self.cfg["dt_s"],
+        )
+
+        soc_pred = np.asarray(
+            prediction_metrics["SOC"],
+            dtype=np.float64,
+        )
+
+        target = self.cfg["target_soc"]
+
+        deficit = np.maximum(
+            target - soc_pred,
+            0.0,
+        )
+
+        if deficit.sum() > 1e-6:
+            I_deficit = (
+                I_max
+                * deficit
+                / (
+                    deficit.max()
+                    + 1e-9
+                )
+            )
+
+            I_final = (
+                0.6 * I_base
+                + 0.4 * I_deficit
+            )
+        else:
+            I_final = I_base
+
+        I_final = project_current_vector(
+            I_final,
+            pack,
+            self.cfg,
+        )
+
+        return self._physics_safety_filter(
+            pack,
+            I_final,
         )
 
 
