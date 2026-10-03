@@ -631,12 +631,6 @@ class GraphGuidedOptimizer:
                     .flatten()
                 )
 
-                imb_score = float(
-                    out["imbalance"]
-                    .cpu()
-                    .item()
-                )
-
                 # PackGNN v2 directly predicts the next state conditioned
                 # on candidate action. No post-hoc Coulomb-counting blend
                 # or current-ratio temperature scaling is used here.
@@ -666,13 +660,19 @@ class GraphGuidedOptimizer:
                 T_grad   = float(np.max(T_virtual) - np.min(T_virtual))
                 n_viol   = int(np.sum(soc_virtual >= 0.98) +
                                np.sum(T_virtual   >= cfg["T_max"]))
+                # Surrogate stage cost mirrors compute_cost() for all
+                # quantities represented by PackGNN.
+                #
+                # Voltage violations cannot be inferred directly because the
+                # surrogate does not predict terminal voltage; those remain
+                # enforced by the downstream physics verification.
                 step_cost = (
                     cfg["w_time"]        * time_term +
-                    cfg["w_imbalance"]   * (soc_imb + 0.5 * imb_score) +
+                    cfg["w_imbalance"]   * soc_imb +
                     cfg["w_temperature"] * max(T_max_v - 38.0, 0.0) / 10.0 +
                     cfg["w_gradient"]    * T_grad / 10.0 +
-                    cfg["w_aging"]       * aging_step * 1e3 +
-                    cfg["w_violation"]   * n_viol * 0.2
+                    cfg["w_aging"]       * aging_step * 1e4 +
+                    cfg["w_violation"]   * n_viol
                 )
                 total_cost += step_cost
 
@@ -776,6 +776,87 @@ class GraphGuidedOptimizer:
 
         return mu.astype(np.float32)
 
+    def _physics_safety_filter(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+        n_bisection: int = 24,
+    ) -> np.ndarray:
+        """
+        One-step plant-model safety filter for the final applied action.
+
+        The CEM elite is physics-checked before the deficit blend, but the
+        blended action itself is a different current vector. Therefore the
+        final action must be re-verified against the ECM/thermal plant before
+        application.
+
+        If the proposed action is unsafe, retain its cell-to-cell allocation
+        direction and find the largest scalar alpha in [0, 1] such that
+
+            alpha * I_proposed
+
+        produces zero one-step plant-model safety violations.
+
+        This filter does not claim formal recursive feasibility; it is a
+        one-step model-based safety check applied at every control update.
+        """
+        proposed = project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
+
+        def feasible(scale: float) -> bool:
+            pack_copy = deepcopy(pack)
+
+            metrics = pack_copy.step(
+                proposed * float(scale),
+                dt=self.cfg["dt_s"],
+            )
+
+            return int(
+                metrics["n_violations"]
+            ) == 0
+
+        # No modification when the actual final blended action is safe.
+        if feasible(1.0):
+            return proposed.astype(
+                np.float32
+            )
+
+        # Defensive fallback for an already-unsafe plant state.
+        if not feasible(0.0):
+            return np.zeros_like(
+                proposed,
+                dtype=np.float32,
+            )
+
+        lo = 0.0
+        hi = 1.0
+
+        for _ in range(
+            int(n_bisection)
+        ):
+            mid = 0.5 * (
+                lo + hi
+            )
+
+            if feasible(mid):
+                lo = mid
+            else:
+                hi = mid
+
+        filtered = (
+            proposed
+            * lo
+        )
+
+        return project_current_vector(
+            filtered,
+            pack,
+            self.cfg,
+        )
+
     def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
         """
         CEM optimisation (see _cem_optimise) provides a physics-verified
@@ -822,11 +903,18 @@ class GraphGuidedOptimizer:
         else:
             I_final = I_base
 
-        # Shared actuator-feasibility projection used by all controllers.
-        return project_current_vector(
+        # Shared actuator-feasibility projection, followed by an explicit
+        # one-step physics check of the ACTUAL blended action that will be
+        # applied to the plant.
+        I_final = project_current_vector(
             I_final,
             pack,
             self.cfg,
+        )
+
+        return self._physics_safety_filter(
+            pack,
+            I_final,
         )
 
 
