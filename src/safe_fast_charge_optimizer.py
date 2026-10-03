@@ -181,47 +181,300 @@ class BalancedCCCVController(BalancedVoltageFeedbackCCCVController):
 
 class SimpleMPCController:
     """
-    Physics-based MPC baseline (no GNN).
-    Uses direct physics simulation rollouts for H steps
-    to optimise current allocation.
-    This is a stronger baseline than CC-CV/Proportional.
+    Matched-budget direct-physics CEM baseline.
+
+    This comparator intentionally uses the SAME CEM search budget as the
+    graph-guided optimizer:
+
+        horizon       H = cfg["horizon"]
+        candidates    K = cfg["cem_samples"]
+        elite count       K * cfg["cem_elite_frac"]
+        iterations        cfg["cem_iterations"]
+        warm start        previous elite mean
+
+    The only substantive difference in the rollout evaluator is that this
+    controller evaluates every candidate directly with the ECM + thermal
+    plant rather than with PackGNN.
+
+    As in GraphGuidedOptimizer, one candidate is a per-cell current vector
+    held constant over the H-step rollout. This keeps the action search
+    space matched rather than giving either controller a larger H x N
+    decision space.
     """
-    def __init__(self, cfg: dict, horizon: int = 3, n_samples: int = 32):
-        self.cfg      = cfg
-        self.horizon  = horizon
-        self.n_samples = n_samples
 
-    def reset(self): pass
+    def __init__(
+        self,
+        cfg: dict,
+        horizon=None,
+        n_samples=None,
+    ):
+        self.cfg = cfg
 
-    def get_currents(self, pack) -> np.ndarray:
-        n     = pack.n_cells
-        Q_nom = np.array([c.Q_nom_Ah for c in pack.cells])
+        self.horizon = int(
+            cfg["horizon"] if horizon is None else horizon
+        )
+
+        self.n_samples = int(
+            cfg["cem_samples"] if n_samples is None else n_samples
+        )
+
+        self.elite_frac = float(
+            cfg["cem_elite_frac"]
+        )
+
+        self.n_iterations = int(
+            cfg["cem_iterations"]
+        )
+
+        self._mu_prev = None
+
+        # Diagnostics for reproducibility / fairness audit.
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = None
+        self.last_iterations = None
+        self.last_horizon = None
+        self.last_best_cost = None
+        self.last_initial_mu = None
+        self.last_final_mu = None
+        self.last_used_warm_start = False
+
+    def reset(self):
+        self._mu_prev = None
+
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = None
+        self.last_iterations = None
+        self.last_horizon = None
+        self.last_best_cost = None
+        self.last_initial_mu = None
+        self.last_final_mu = None
+        self.last_used_warm_start = False
+
+    def _project_population(
+        self,
+        samples: np.ndarray,
+        pack: BatteryPackGraph,
+    ) -> np.ndarray:
+        """
+        Apply the same per-cell and pack-level actuator constraints used
+        by the graph-guided CEM.
+        """
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
         I_max = self.cfg["I_max_C"] * Q_nom
-        I_pack_max = self.cfg["I_pack_max_C"] * Q_nom.sum()
-        dt    = self.cfg["dt_s"]
-        cfg   = self.cfg
 
-        mu  = I_max * 0.5
-        sig = I_max * 0.3
-        best_cost = float("inf")
-        best_I    = mu.copy()
+        samples = np.asarray(
+            samples,
+            dtype=np.float64,
+        )
 
-        for _ in range(self.n_samples):
-            I_cand = np.clip(np.random.normal(mu, sig), 0, I_max)
-            cand_sum = I_cand.sum()
-            if cand_sum > I_pack_max:
-                I_cand = I_cand * (I_pack_max / cand_sum)
-            cost = 0.0
-            pack_copy = deepcopy(pack)
-            for h in range(self.horizon):
-                m = pack_copy.step(I_cand.astype(np.float32), dt=dt)
-                cost += compute_cost(m, cfg, h, False)
-                if m["SOC_mean"] >= cfg["target_soc"]: break
-            if cost < best_cost:
-                best_cost = cost
-                best_I    = I_cand.copy()
+        samples = np.clip(
+            samples,
+            0.0,
+            I_max[None, :],
+        )
 
-        return best_I.astype(np.float32)
+        I_pack_max = (
+            self.cfg["I_pack_max_C"]
+            * Q_nom.sum()
+        )
+
+        pack_current = samples.sum(
+            axis=1,
+            keepdims=True,
+        )
+
+        scale = np.where(
+            pack_current > I_pack_max,
+            I_pack_max
+            / np.maximum(pack_current, 1e-12),
+            1.0,
+        )
+
+        return samples * scale
+
+    def _physics_rollout_cost(
+        self,
+        pack: BatteryPackGraph,
+        current_vector: np.ndarray,
+    ):
+        """
+        Direct H-step ECM + thermal rollout.
+
+        The same current vector is held across the prediction horizon,
+        matching the action parameterisation of GraphGuidedOptimizer.
+        """
+        virtual_pack = deepcopy(pack)
+
+        total_cost = 0.0
+        physics_steps = 0
+
+        for h in range(self.horizon):
+
+            currents = project_current_vector(
+                current_vector,
+                virtual_pack,
+                self.cfg,
+            )
+
+            metrics = virtual_pack.step(
+                currents,
+                dt=self.cfg["dt_s"],
+            )
+
+            physics_steps += 1
+
+            done = (
+                metrics["SOC_mean"]
+                >= self.cfg["target_soc"]
+            )
+
+            total_cost += compute_cost(
+                metrics,
+                self.cfg,
+                h,
+                done,
+            )
+
+            if done:
+                break
+
+        return float(total_cost), physics_steps
+
+    def get_currents(
+        self,
+        pack: BatteryPackGraph,
+    ) -> np.ndarray:
+
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        I_max = (
+            self.cfg["I_max_C"]
+            * Q_nom
+        )
+
+        # Exactly the same initial-distribution policy as GraphGuidedOptimizer.
+        if self._mu_prev is not None:
+            mu = self._mu_prev.copy()
+            self.last_used_warm_start = True
+        else:
+            mu = I_max * 0.5
+            self.last_used_warm_start = False
+
+        sig = I_max / 3.0
+
+        self.last_initial_mu = mu.copy()
+
+        elite_k = max(
+            1,
+            int(
+                self.n_samples
+                * self.elite_frac
+            ),
+        )
+
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = elite_k
+        self.last_iterations = self.n_iterations
+        self.last_horizon = self.horizon
+
+        selected = mu.copy()
+        selected_cost = float("inf")
+
+        for cem_iter in range(
+            self.n_iterations
+        ):
+
+            samples = np.random.normal(
+                mu[None, :],
+                sig[None, :],
+                size=(
+                    self.n_samples,
+                    pack.n_cells,
+                ),
+            )
+
+            samples = self._project_population(
+                samples,
+                pack,
+            )
+
+            costs = np.empty(
+                self.n_samples,
+                dtype=np.float64,
+            )
+
+            for s_idx, sample in enumerate(
+                samples
+            ):
+                cost, n_steps = (
+                    self._physics_rollout_cost(
+                        pack,
+                        sample,
+                    )
+                )
+
+                costs[s_idx] = cost
+
+                self.last_candidate_evaluations += 1
+                self.last_physics_steps += n_steps
+
+            elite_idx = np.argsort(
+                costs
+            )[:elite_k]
+
+            elite = samples[
+                elite_idx
+            ]
+
+            elite_mean = elite.mean(
+                axis=0
+            )
+
+            elite_std = elite.std(
+                axis=0
+            ) + 1e-6
+
+            # Every candidate is already evaluated by the true physics model.
+            best_idx = int(
+                np.argmin(costs)
+            )
+
+            if costs[best_idx] < selected_cost:
+                selected_cost = float(
+                    costs[best_idx]
+                )
+                selected = samples[
+                    best_idx
+                ].copy()
+
+            mu = elite_mean
+            sig = elite_std
+
+        self._mu_prev = mu.copy()
+
+        self.last_final_mu = mu.copy()
+        self.last_best_cost = selected_cost
+
+        return project_current_vector(
+            selected,
+            pack,
+            self.cfg,
+        )
+
+
+# Explicit scientific name while preserving the existing class/API name.
+PhysicsCEMController = SimpleMPCController
+
 
 class ProportionalController:
     """
@@ -636,7 +889,7 @@ def run_experiment(cfg: dict, ecm_parquet: Path,
     controllers = {
         "CC-CV":            CCCVController(cfg),
         "CC-CV-Balance":    BalancedCCCVController(cfg),
-        "SimpleMPC":        SimpleMPCController(cfg, horizon=3, n_samples=32),
+        "SimpleMPC":        SimpleMPCController(cfg),
         "Proportional":     ProportionalController(cfg),
         "GraphOptimizer":   GraphGuidedOptimizer(cfg, gnn),
     }
