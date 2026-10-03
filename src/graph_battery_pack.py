@@ -455,69 +455,161 @@ class EdgeConv(nn.Module):
 
 class PackGNN(nn.Module):
     """
-    GNN for battery pack state prediction.
+    Action-conditioned graph surrogate for one-step battery-pack dynamics.
 
-    Input : pack graph state {x, edge_index, edge_attr}
-    Output: predicted next-step node features (SOC, ΔT, aging_rate)
-            + pack-level imbalance score
+    Input:
+        G_t = {x_t, edge_index, edge_attr_t}
+        u_t = per-cell candidate charging action, normalised by each cell's
+              configured maximum current.
 
-    Architecture:
-      Input projection → 3× EdgeConv → Output heads
+    Output:
+        SOC_{t+1}
+        Delta-T_{t+1}
+        per-cell aging proxy
+        pack-level SOC-imbalance estimate
+
+    This implements the causal surrogate used by MPC:
+
+        (G_t, u_t) -> G_{t+1}
+
+    rather than predicting the next state from G_t alone.
     """
-    def __init__(self, node_feat: int = 7, edge_feat: int = 3,
-                 hidden: int = 64, n_layers: int = 3):
+
+    MODEL_FORMAT_VERSION = 2
+
+    def __init__(
+        self,
+        node_feat: int = 7,
+        edge_feat: int = 3,
+        hidden: int = 64,
+        n_layers: int = 3,
+        action_feat: int = 1,
+    ):
         super().__init__()
-        self.input_proj = nn.Linear(node_feat, hidden)
+
+        self.node_feat = int(node_feat)
+        self.edge_feat = int(edge_feat)
+        self.hidden = int(hidden)
+        self.n_layers = int(n_layers)
+        self.action_feat = int(action_feat)
+
+        # Explicit action is concatenated with every cell/node feature vector.
+        self.input_proj = nn.Linear(
+            self.node_feat + self.action_feat,
+            hidden,
+        )
 
         self.convs = nn.ModuleList([
-            EdgeConv(hidden, edge_feat, hidden * 2)
+            EdgeConv(
+                hidden,
+                edge_feat,
+                hidden * 2,
+            )
             for _ in range(n_layers)
         ])
 
-        # Node-level prediction heads
         self.soc_head = nn.Sequential(
-            nn.Linear(hidden, 32), nn.GELU(),
-            nn.Linear(32, 1), nn.Sigmoid()     # SOC ∈ [0,1]
+            nn.Linear(hidden, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
         )
+
         self.temp_head = nn.Sequential(
-            nn.Linear(hidden, 32), nn.GELU(),
-            nn.Linear(32, 1)                    # ΔT [°C]
+            nn.Linear(hidden, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
         )
+
         self.aging_head = nn.Sequential(
-            nn.Linear(hidden, 32), nn.GELU(),
-            nn.Linear(32, 1), nn.Softplus()     # aging ≥ 0
+            nn.Linear(hidden, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+            nn.Softplus(),
         )
 
-        # Pack-level head (global mean pooling → imbalance score)
         self.pack_head = nn.Sequential(
-            nn.Linear(hidden, 32), nn.GELU(),
-            nn.Linear(32, 1), nn.Sigmoid()      # imbalance score [0,1]
+            nn.Linear(hidden, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
         )
 
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
-                edge_attr: torch.Tensor) -> dict:
-        """
-        Returns:
-            soc_pred    : (N, 1)
-            delta_T_pred: (N, 1)
-            aging_pred  : (N, 1)
-            imbalance   : (1,)  pack-level imbalance score
-        """
-        h = self.input_proj(x)                  # (N, hidden)
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        action: torch.Tensor,
+    ) -> dict:
+
+        if action is None:
+            raise ValueError(
+                "PackGNN v2 requires explicit candidate action u_t. "
+                "Unconditioned inference is not permitted."
+            )
+
+        if action.ndim == 1:
+            action = action.unsqueeze(-1)
+
+        if action.ndim != 2:
+            raise ValueError(
+                f"action must have shape (N,) or (N,1); got {tuple(action.shape)}"
+            )
+
+        if action.shape[0] != x.shape[0]:
+            raise ValueError(
+                f"Node/action count mismatch: x={tuple(x.shape)}, "
+                f"action={tuple(action.shape)}"
+            )
+
+        if action.shape[1] != self.action_feat:
+            raise ValueError(
+                f"Expected action feature width {self.action_feat}; "
+                f"got {action.shape[1]}"
+            )
+
+        # Candidate actions are represented as fractions of each cell's
+        # configured maximum current. Feasible controller actions are [0,1].
+        action = torch.clamp(
+            action.to(
+                device=x.device,
+                dtype=x.dtype,
+            ),
+            0.0,
+            1.0,
+        )
+
+        x_action = torch.cat(
+            [x, action],
+            dim=-1,
+        )
+
+        h = self.input_proj(x_action)
 
         for conv in self.convs:
-            h = conv(h, edge_index, edge_attr)   # (N, hidden)
+            h = conv(
+                h,
+                edge_index,
+                edge_attr,
+            )
 
-        soc_pred    = self.soc_head(h)           # (N, 1)
-        delta_T_pred= self.temp_head(h)          # (N, 1)
-        aging_pred  = self.aging_head(h)         # (N, 1)
-        imbalance   = self.pack_head(h.mean(0, keepdim=True))  # (1, 1)
+        soc_pred = self.soc_head(h)
+        delta_T_pred = self.temp_head(h)
+        aging_pred = self.aging_head(h)
+
+        imbalance = self.pack_head(
+            h.mean(
+                0,
+                keepdim=True,
+            )
+        )
 
         return {
-            "soc_pred":     soc_pred,
+            "soc_pred": soc_pred,
             "delta_T_pred": delta_T_pred,
-            "aging_pred":   aging_pred,
-            "imbalance":    imbalance.squeeze(),
+            "aging_pred": aging_pred,
+            "imbalance": imbalance.squeeze(),
         }
 
 

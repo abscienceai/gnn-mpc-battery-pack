@@ -534,6 +534,43 @@ class GraphGuidedOptimizer:
     def reset(self):
         self._mu_prev = None  # start each new episode from the uninformative prior
 
+    def _action_tensor(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+    ) -> torch.Tensor:
+        """
+        Convert candidate current [A] to the explicit per-cell PackGNN action.
+
+        u_i = I_i / I_i,max
+        """
+        q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        i_max = (
+            float(self.cfg["I_max_C"])
+            * q_nom
+        )
+
+        action = np.asarray(
+            currents,
+            dtype=np.float64,
+        ) / (i_max + 1e-12)
+
+        action = np.clip(
+            action,
+            0.0,
+            1.0,
+        )
+
+        return torch.tensor(
+            action[:, None],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
     def _gnn_rollout_cost(self, pack: BatteryPackGraph,
                            current_seq: np.ndarray) -> float:
         """
@@ -560,21 +597,63 @@ class GraphGuidedOptimizer:
             for h in range(cfg["horizon"]):
                 I_h = current_seq[h]  # (n_cells,)
 
-                # ── GNN forward on current (updated) graph state ──────────
-                out          = self.gnn(x, edge_index, edge_attr)
-                soc_pred     = out["soc_pred"].cpu().numpy().flatten()
-                dT_pred      = out["delta_T_pred"].cpu().numpy().flatten()
-                aging_pred   = out["aging_pred"].cpu().numpy().flatten()
-                imb_score    = float(out["imbalance"].cpu().item())
+                # Explicit candidate action u_t for the v2 causal surrogate.
+                action_t = self._action_tensor(
+                    pack,
+                    I_h,
+                )
 
-                # ── Action-conditioned state update ───────────────────────
-                i_ratio      = I_h / (I_max + 1e-9)
-                coulomb      = (I_h * cfg["dt_s"]) / (Q_nom * 3600.0)
-                soc_virtual  = np.clip(
-                    soc_virtual + coulomb + 0.3 * (soc_pred - soc_virtual),
-                    0.0, 1.0)
-                T_virtual    = T_virtual + dT_pred * i_ratio * 3.0
-                aging_step   = float(np.sum(aging_pred) * np.mean(i_ratio))
+                out = self.gnn(
+                    x,
+                    edge_index,
+                    edge_attr,
+                    action_t,
+                )
+
+                soc_pred = (
+                    out["soc_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                dT_pred = (
+                    out["delta_T_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                aging_pred = (
+                    out["aging_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                imb_score = float(
+                    out["imbalance"]
+                    .cpu()
+                    .item()
+                )
+
+                # PackGNN v2 directly predicts the next state conditioned
+                # on candidate action. No post-hoc Coulomb-counting blend
+                # or current-ratio temperature scaling is used here.
+                soc_virtual = np.clip(
+                    soc_pred,
+                    0.0,
+                    1.0,
+                )
+
+                T_virtual = (
+                    T_virtual
+                    + dT_pred
+                )
+
+                aging_step = float(
+                    np.sum(aging_pred)
+                )
 
                 # ── Time term: 1[SOC_bar_{t+h} < SOC*], matching Eq. 12 exactly ──
                 if not reached_target and float(np.mean(soc_virtual)) >= cfg["target_soc"]:
@@ -666,16 +745,6 @@ class GraphGuidedOptimizer:
                                    I_pack_max / pack_curr, 1.0)
             samples   *= scale
 
-            # ── GNN surrogate cost (fast, no deepcopy) ──────────────────
-            with torch.no_grad():
-                out = self.gnn(x, edge_index, edge_attr)
-                soc_pred_gnn = out["soc_pred"].cpu().numpy().flatten()   # (N,)
-                dT_pred_gnn  = out["delta_T_pred"].cpu().numpy().flatten() # (N,)
-                aging_pred   = out["aging_pred"].cpu().numpy().flatten()  # (N,)
-
-            soc_now = np.array([c.SOC for c in pack.cells])
-            T_now   = np.array([c.T_C for c in pack.cells])
-
             costs = np.zeros(n_samples)
             for s_idx, s in enumerate(samples):
                 # True multi-step GNN rollout: holds action s constant for H steps.
@@ -726,11 +795,18 @@ class GraphGuidedOptimizer:
         I_base = self._cem_optimise(pack)
 
         g = pack.to_torch_graph()
+
         with torch.no_grad():
+            action_base = self._action_tensor(
+                pack,
+                I_base,
+            )
+
             out = self.gnn(
                 g["x"].to(self.device),
                 g["edge_index"].to(self.device),
-                g["edge_attr"].to(self.device)
+                g["edge_attr"].to(self.device),
+                action_base,
             )
         soc_pred = out["soc_pred"].cpu().numpy().flatten()
 
@@ -866,25 +942,65 @@ def run_experiment(cfg: dict, ecm_parquet: Path,
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Initialise GNN (untrained → used as surrogate with random init)
-    # In full pipeline: load trained GNN from train_gnn.py
-    gnn = PackGNN(node_feat=7, edge_feat=3, hidden=64, n_layers=3)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Canonical submission model: explicit action-conditioned PackGNN v2.
+    gnn = PackGNN(
+        node_feat=7,
+        edge_feat=3,
+        hidden=64,
+        n_layers=3,
+        action_feat=1,
+    )
+
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
+    )
+
     gnn = gnn.to(device)
 
-    # Load trained GNN (fixed path: results/models/, independent of output_dir)
-    MODELS_DIR = Path(__file__).resolve().parent.parent / "results" / "models"
-    gnn_paths = sorted(MODELS_DIR.glob("pack_gnn_*.pt"))
+    gnn_paths = sorted(
+        MODELS_DIR.glob(
+            "pack_gnn_action_v2_*.pt"
+        )
+    )
+
     if not gnn_paths:
         raise FileNotFoundError(
-            f"No trained PackGNN checkpoint found in {MODELS_DIR}. Refusing "
-            f"to silently fall back to a random-initialised GNN; train one "
-            f"with train_gnn.py or place the released checkpoint "
-            f"(pack_gnn_20260630_220402.pt) in this directory."
+            "No action-conditioned PackGNN v2 checkpoint found in "
+            f"{MODELS_DIR}. Run train_gnn.py first. Legacy "
+            "pack_gnn_*.pt checkpoints are intentionally rejected."
         )
-    ckpt = torch.load(gnn_paths[-1], map_location=device)
-    gnn.load_state_dict(ckpt["model_state"])
-    print(f"  Loaded GNN: {gnn_paths[-1].name}")
+
+    ckpt_path = gnn_paths[-1]
+
+    ckpt = torch.load(
+        ckpt_path,
+        map_location=device,
+    )
+
+    if ckpt.get("model_format_version") != 2:
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path.name} is not PackGNN v2."
+        )
+
+    if not ckpt.get(
+        "action_conditioned",
+        False,
+    ):
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path.name} is not action-conditioned."
+        )
+
+    gnn.load_state_dict(
+        ckpt["model_state"],
+        strict=True,
+    )
+
+    print(
+        f"  Loaded action-conditioned GNN v2: "
+        f"{ckpt_path.name}"
+    )
 
     controllers = {
         "CC-CV":            CCCVController(cfg),
