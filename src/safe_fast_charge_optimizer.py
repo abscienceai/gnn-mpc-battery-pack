@@ -12,7 +12,7 @@ PROBLEM : Given a battery pack (dynamic graph), find the optimal per-cell
             3. Minimises temperature gradient ΔT (safety ↑)
             4. Minimises cumulative aging cost   (longevity ↑)
           Subject to:
-            - Voltage limits:    2.5V ≤ V_term ≤ 4.2V
+            - Voltage limits:    dataset/evaluation-specific; canonical LFP uses 2.0-3.5 V
             - Temperature limit: T ≤ 45°C
             - SOC limit:         SOC ≤ 0.98
             - Current limits:    0 ≤ I_i ≤ I_max (per cell)
