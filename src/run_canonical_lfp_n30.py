@@ -1376,6 +1376,7 @@ for seed_idx, seed in enumerate(
         soc_init=cfg["soc_init"],
         soc_noise=cfg["soc_noise"],
         seed=seed,
+        strict=True,
     )
 
     for cell in base_pack.cells:

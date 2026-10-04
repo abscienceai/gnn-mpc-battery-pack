@@ -793,6 +793,7 @@ for idx, seed in enumerate(
         soc_init=0.20,
         soc_noise=0.03,
         seed=seed,
+        strict=True,
     )
 
     for c in base.cells:

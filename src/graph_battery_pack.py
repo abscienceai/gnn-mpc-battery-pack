@@ -623,85 +623,310 @@ def build_pack_from_ecm(ecm_parquet=None, n_cells: int = 12,
                          soc_init: float = 0.2,
                          soc_noise: float = 0.03,
                          ecm_df=None,
-                         seed: int = 42) -> BatteryPackGraph:
+                         seed: int = 42,
+                         strict: bool = False) -> BatteryPackGraph:
     """
-    Build a BatteryPackGraph by sampling real ECM parameters from
-    the extracted parquet file.
+    Build a BatteryPackGraph using dataset-informed ECM parameters.
 
-    n_cells  : number of cells in the pack (series string)
-    chemistry: filter rows by dataset matching chemistry
+    The external ECM table supplies R0 (IR_ohm) and SOH. Other model
+    quantities such as R1, C1 and the nominal chemistry capacity remain
+    chemistry-level defaults in the current model.
+
+    Parameters
+    ----------
+    strict:
+        If True, failure to read/use the requested dataset raises an
+        exception instead of silently falling back to synthetic R0/SOH.
+        The default False preserves legacy behaviour.
     """
+    sampled = None
+    source_mode = "synthetic_fallback"
+    source_dataset = None
+    source_path = (
+        str(ecm_parquet)
+        if ecm_parquet is not None
+        else None
+    )
+
+    chem_to_ds = {
+        "LFP": "MATR",
+        "NMC": "RWTH",
+        "LCO": "CALCE",
+    }
+
+    ds_name = chem_to_ds.get(
+        chemistry,
+        "MATR",
+    )
+
     try:
         import pandas as pd
+
         if ecm_df is not None:
             df = ecm_df
+
         elif ecm_parquet is not None:
-            df = pd.read_parquet(ecm_parquet)
+            df = pd.read_parquet(
+                ecm_parquet
+            )
+
         else:
+            if strict:
+                raise ValueError(
+                    "strict=True requires ecm_df "
+                    "or ecm_parquet."
+                )
+
             df = None
 
-        # Filter by chemistry / dataset
-        chem_to_ds = {"LFP": "MATR", "NMC": "RWTH", "LCO": "CALCE"}
-        ds_name = chem_to_ds.get(chemistry, "MATR")
-        sub = df[df["dataset"] == ds_name].dropna(subset=["IR_ohm"])
+        if df is not None:
+            required = {
+                "dataset",
+                "IR_ohm",
+            }
 
-        if len(sub) == 0:
-            sub = df.dropna(subset=["IR_ohm"])
+            missing = (
+                required
+                - set(df.columns)
+            )
 
-        # Sample n_cells rows (with replacement if needed)
-        sampled = sub.sample(n=n_cells, replace=len(sub) < n_cells,
-                             random_state=seed)
+            if missing:
+                raise ValueError(
+                    "ECM table missing required "
+                    f"columns: {sorted(missing)}"
+                )
 
-    except Exception:
+            sub = (
+                df[
+                    df["dataset"]
+                    == ds_name
+                ]
+                .dropna(
+                    subset=["IR_ohm"]
+                )
+            )
+
+            if len(sub) == 0:
+                if strict:
+                    raise ValueError(
+                        f"No usable ECM rows for "
+                        f"chemistry={chemistry!r}, "
+                        f"dataset={ds_name!r}."
+                    )
+
+                # Legacy fallback across datasets.
+                sub = df.dropna(
+                    subset=["IR_ohm"]
+                )
+
+                source_dataset = (
+                    "all_available_datasets"
+                )
+
+            else:
+                source_dataset = ds_name
+
+            if len(sub) == 0:
+                raise ValueError(
+                    "ECM table contains no usable "
+                    "IR_ohm rows."
+                )
+
+            sampled = sub.sample(
+                n=n_cells,
+                replace=(
+                    len(sub)
+                    < n_cells
+                ),
+                random_state=seed,
+            )
+
+            source_mode = "dataset"
+
+    except Exception as exc:
+        if strict:
+            raise RuntimeError(
+                "Strict ECM pack construction "
+                f"failed for chemistry={chemistry!r}, "
+                f"dataset={ds_name!r}, "
+                f"source={source_path!r}."
+            ) from exc
+
         sampled = None
+        source_mode = (
+            "synthetic_fallback"
+        )
+        source_dataset = None
 
     rng = np.random.default_rng(seed)
     cells = []
+
+    sampled_cell_ids = []
+
     for i in range(n_cells):
-        # ECM parameters — from data or chemistry defaults
-        if sampled is not None and i < len(sampled):
+        # Dataset-informed R0/SOH or legacy
+        # synthetic fallback.
+        if (
+            sampled is not None
+            and
+            i < len(sampled)
+        ):
             row = sampled.iloc[i]
-            R0  = float(row.get("IR_ohm", 0.05))
-            SOH = float(row.get("SOH", 0.95))
-            # NaN veya geçersiz değerleri düzelt (NaN truthy olduğu için or çalışmaz)
-            if np.isnan(R0)  or R0  <= 0 or R0  > 1.0: R0  = 0.05
-            if np.isnan(SOH) or SOH <= 0 or SOH > 1.2:  SOH = 0.92
+
+            R0 = float(
+                row.get(
+                    "IR_ohm",
+                    0.05,
+                )
+            )
+
+            SOH = float(
+                row.get(
+                    "SOH",
+                    0.95,
+                )
+            )
+
+            sampled_cell_ids.append(
+                str(
+                    row.get(
+                        "cell_id",
+                        sampled.index[i],
+                    )
+                )
+            )
+
+            if (
+                np.isnan(R0)
+                or R0 <= 0
+                or R0 > 1.0
+            ):
+                R0 = 0.05
+
+            if (
+                np.isnan(SOH)
+                or SOH <= 0
+                or SOH > 1.2
+            ):
+                SOH = 0.92
+
         else:
-            R0  = 0.03 + rng.uniform(-0.01, 0.01)
-            SOH = 0.90 + rng.uniform(0, 0.10)
+            R0 = (
+                0.03
+                + rng.uniform(
+                    -0.01,
+                    0.01,
+                )
+            )
 
-        R0  = np.clip(R0,  0.005, 0.5)
-        SOH = np.clip(SOH, 0.70,  1.0)
+            SOH = (
+                0.90
+                + rng.uniform(
+                    0,
+                    0.10,
+                )
+            )
 
-        # Chemistry-based defaults
+        R0 = np.clip(
+            R0,
+            0.005,
+            0.5,
+        )
+
+        SOH = np.clip(
+            SOH,
+            0.70,
+            1.0,
+        )
+
+        # Chemistry-level defaults.
         defaults = {
-            "LFP": {"Q": 1.1, "R1": 0.02, "C1": 1500.0, "V_oc": 3.3},
-            "NMC": {"Q": 3.0, "R1": 0.03, "C1": 1000.0, "V_oc": 3.7},
-            "LCO": {"Q": 1.5, "R1": 0.025,"C1": 1200.0, "V_oc": 3.8},
-        }.get(chemistry, {"Q": 1.1, "R1": 0.02, "C1": 1500.0, "V_oc": 3.3})
+            "LFP": {
+                "Q": 1.1,
+                "R1": 0.02,
+                "C1": 1500.0,
+                "V_oc": 3.3,
+            },
+            "NMC": {
+                "Q": 3.0,
+                "R1": 0.03,
+                "C1": 1000.0,
+                "V_oc": 3.7,
+            },
+            "LCO": {
+                "Q": 1.5,
+                "R1": 0.025,
+                "C1": 1200.0,
+                "V_oc": 3.8,
+            },
+        }.get(
+            chemistry,
+            {
+                "Q": 1.1,
+                "R1": 0.02,
+                "C1": 1500.0,
+                "V_oc": 3.3,
+            },
+        )
 
-        SOC_i = float(np.clip(
-            soc_init + rng.normal(0, soc_noise), 0.05, 0.95
-        ))
-        T_i   = T_amb + rng.normal(0, 1.0)
+        SOC_i = float(
+            np.clip(
+                soc_init
+                + rng.normal(
+                    0,
+                    soc_noise,
+                ),
+                0.05,
+                0.95,
+            )
+        )
+
+        T_i = (
+            T_amb
+            + rng.normal(
+                0,
+                1.0,
+            )
+        )
 
         cell = CellState(
-            cell_id   = f"cell_{i:02d}",
-            SOC       = SOC_i,
-            T_C       = T_i,
-            SOH       = SOH,
-            V_oc      = defaults["V_oc"],
-            V_term    = defaults["V_oc"] - SOC_i * 0.1,
-            R0        = R0,
-            R1        = defaults["R1"],
-            C1        = defaults["C1"],
-            I_A       = 0.0,
-            Q_nom_Ah  = defaults["Q"] * SOH,
-            chemistry = chemistry,
+            cell_id=f"cell_{i:02d}",
+            SOC=SOC_i,
+            T_C=T_i,
+            SOH=SOH,
+            V_oc=defaults["V_oc"],
+            V_term=(
+                defaults["V_oc"]
+                - SOC_i * 0.1
+            ),
+            R0=R0,
+            R1=defaults["R1"],
+            C1=defaults["C1"],
+            I_A=0.0,
+            Q_nom_Ah=(
+                defaults["Q"]
+                * SOH
+            ),
+            chemistry=chemistry,
         )
+
         cells.append(cell)
 
-    return BatteryPackGraph(cells, T_amb=T_amb)
+    pack = BatteryPackGraph(
+        cells,
+        T_amb=T_amb,
+    )
+
+    # Non-dynamical provenance metadata.
+    pack.ecm_source_mode = source_mode
+    pack.ecm_dataset = source_dataset
+    pack.ecm_source_path = source_path
+    pack.ecm_strict = bool(strict)
+    pack.ecm_sampled_cell_ids = (
+        sampled_cell_ids
+    )
+
+    return pack
 
 
 # ═══════════════════════════════════════════════════════════════════════════
