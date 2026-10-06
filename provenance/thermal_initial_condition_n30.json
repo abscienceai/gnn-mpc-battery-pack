@@ -1,0 +1,48 @@
+{
+  "git_commit": "04d6c4bbc7997195b13ac7cb4b3ec24a180bb72d",
+  "checkpoint_sha256": "2f3acc96e77504be0a060f5bee9bb2263b62df08c8fcd2afca353005c02e0b5f",
+  "ecm_sha256": "5580ff78d2518c645588d5bdd58ace96507e14bb2622dd6e26cf080397d94988",
+  "diagnostic_seeds": [
+    510001,
+    510008,
+    510015,
+    510022,
+    510029,
+    510036,
+    510043,
+    510050,
+    510057,
+    510064,
+    510071,
+    510078,
+    510085,
+    510092,
+    510099,
+    510106,
+    510113,
+    510120,
+    510127,
+    510134,
+    510141,
+    510148,
+    510155,
+    510162,
+    510169,
+    510176,
+    510183,
+    510190,
+    510197,
+    510204
+  ],
+  "conditions": [
+    "heterogeneous_T",
+    "uniform_25C"
+  ],
+  "controllers": [
+    "Physics-CEM",
+    "GraphOptimizer"
+  ],
+  "design": "2x2 paired diagnostic: natural heterogeneous initial T vs all cells forced to 25 C; Physics-CEM vs GraphOptimizer",
+  "uniform_temperature_C": 25.0,
+  "control_rng": "30,000,000 + diagnostic pack seed"
+}

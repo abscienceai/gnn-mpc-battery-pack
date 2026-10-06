@@ -1,5 +1,0 @@
-method,charge_time_min,sigma_SOC_pct,T_max_C,delta_T_C,aging_proxy_e4,violations,runtime_s,n_episodes
-GraphOptimizer,38.63,0.3638,26.23,0.019,10.7582,0.0,2088.0,30
-MLPOptimizer,27.5,7.0784,26.31,0.307,8.6698,1.13,631.5,30
-CC-CV,12.53,3.2226,27.11,0.255,7.8165,0.03,0.2,30
-Proportional,13.63,0.3033,26.97,0.423,7.6294,0.0,0.3,30

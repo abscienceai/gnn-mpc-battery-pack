@@ -1,7 +1,0 @@
-error_mode,controller,time_min,time_std,sigma_pct,sigma_std,T_max,dT,dT_std,violations,aging_e4,N
-Clean (no error),GraphOptimizer,38.8,1.6912,0.3629,0.0794,26.223,0.0185,0.0076,0.0,10.7853,20
-"Independent per-cell N(0,σ²)",GraphOptimizer,49.1,1.4457,1.8624,0.4739,26.2155,0.2132,0.0669,0.0,13.456,20
-"Common-mode N(0,σ²)",GraphOptimizer,34.2,2.7495,0.2757,0.1442,26.2295,0.0809,0.0397,0.0,9.8375,20
-"Fixed per-cell bias N(0,σ²)",GraphOptimizer,46.95,11.7238,6.581,1.3289,26.223,0.0441,0.0408,0.0,12.6982,20
-"Correlated drift (RW, std≈σ at 12 steps)",GraphOptimizer,55.3,10.7289,12.1762,1.8959,26.219,0.1491,0.0488,16.5,14.7734,20
-"CC-CV (reference, no error)",CC-CV,14.8,0,3.2531,0,26.663,0.1911,0,0.05,7.4585,20

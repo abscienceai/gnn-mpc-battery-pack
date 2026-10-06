@@ -1,0 +1,46 @@
+{
+  "heterogeneous_T": {
+    "Physics-CEM": {
+      "n": 30,
+      "charging_time_mean_min": 24.966666666666665,
+      "sigma_SOC_mean_pct": 0.34975783155591855,
+      "final_dT_mean_C": 0.11336532889885666,
+      "max_dT_mean_C": 2.117001445081524,
+      "peak_T_mean_C": 26.333319290359707,
+      "violations_total": 0,
+      "target_successes": 30
+    },
+    "GraphOptimizer": {
+      "n": 30,
+      "charging_time_mean_min": 21.733333333333334,
+      "sigma_SOC_mean_pct": 0.3608862781587453,
+      "final_dT_mean_C": 0.1532900002626865,
+      "max_dT_mean_C": 2.1694686638555916,
+      "peak_T_mean_C": 26.387742367614116,
+      "violations_total": 0,
+      "target_successes": 30
+    }
+  },
+  "uniform_25C": {
+    "Physics-CEM": {
+      "n": 30,
+      "charging_time_mean_min": 25.566666666666666,
+      "sigma_SOC_mean_pct": 0.37236778863333286,
+      "final_dT_mean_C": 0.09686060800690134,
+      "max_dT_mean_C": 0.1554235165220226,
+      "peak_T_mean_C": 25.615214811135335,
+      "violations_total": 0,
+      "target_successes": 30
+    },
+    "GraphOptimizer": {
+      "n": 30,
+      "charging_time_mean_min": 21.8,
+      "sigma_SOC_mean_pct": 0.3707479056499452,
+      "final_dT_mean_C": 0.12824700638212708,
+      "max_dT_mean_C": 0.16386437371340618,
+      "peak_T_mean_C": 25.784766571739556,
+      "violations_total": 0,
+      "target_successes": 30
+    }
+  }
+}

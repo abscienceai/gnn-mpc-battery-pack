@@ -1,0 +1,5 @@
+arm,episodes,target_successes,episodes_with_explicit_violation,total_explicit_study_violations,max_peak_voltage_V,max_peak_temperature_C,mean_actuator_exceed_steps
+HUST-Raw,30,30,30,903,3.6686230960203763,29.77758197012239,7.966666666666667
+HUST-Projected,30,30,0,0,3.4720407289900304,27.97014804868127,8.0
+Physics-CEM,30,30,0,0,3.49999999742289,27.75354036969894,0.0
+GraphOptimizer,30,30,0,0,3.479004214815305,27.760250625485398,0.0

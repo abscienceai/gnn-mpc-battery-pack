@@ -56,9 +56,9 @@ RAW = OUT_DIR / "thermal_initial_condition_raw.jsonl"
 SUMMARY = OUT_DIR / "thermal_initial_condition_summary.json"
 
 PROV = (
-    ROOT.parent
-    / "provenance/"
-      "thermal_initial_condition_n30.json"
+    ROOT
+    / "provenance"
+    / "thermal_initial_condition_n30.json"
 )
 
 EXPECTED_CKPT_SHA = (

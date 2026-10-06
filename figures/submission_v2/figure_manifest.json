@@ -1,0 +1,44 @@
+{
+  "created_utc": "2026-10-04T06:20:04.494089+00:00",
+  "git_head_at_figure_generation": "a28143ea3bb60081214ae9aa91e9051b1c202e72",
+  "generation_pipeline": [
+    "src/generate_submission_figures_v2.py",
+    "src/refine_submission_figures_v2.py"
+  ],
+  "generator_sha256": {
+    "generate_submission_figures_v2.py": "f7a65015e6117c48ab794dd08a9771b6a4ad8bf5e7a43e8416e640da3f9d838b",
+    "refine_submission_figures_v2.py": "b7e2707804d1f8c5ec15b0cfa52022f332e33b8b31c85af2ac624ecc7b2853c3"
+  },
+  "inputs": {
+    "repo/results/canonical_lfp_n30/canonical_lfp_n30_summary.csv": "80c0940cef9a4a706b8932b529668ae9b080e2d311286e4a2bcaaf034263d3b2",
+    "repo/results/canonical_lfp_n30/canonical_lfp_n30_raw.jsonl": "ea729a28732181da9c910f2f35bed15d588895429e4347980e8b210d897f72ee",
+    "repo/results/canonical_lfp_n30/statistics/paired_statistics.csv": "e5f7cacf3f0cf41bb8ebd2278f59027917b0a331a94f6b72b31343d2b5c53941",
+    "repo/results/diagnostics/thermal_initial_condition_n30/thermal_initial_condition_raw.jsonl": "b6cee2d72fd96d1a6b9a168e357eae1607600abcb03be4e8c6b90269b4b95e8a",
+    "repo/results/diagnostics/thermal_initial_condition_n30/thermal_initial_condition_statistics.csv": "d7e4dfa3eb7e7ce67310ef7a0339aebd02f42d80149066e923939875761f54a7",
+    "repo/results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_raw.jsonl": "27177ed5f8d00abfff8f21871e1df6437096a87eb4c876e209653e8c5e5e2edd",
+    "repo/results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_statistics.csv": "9c6979df2178d417018fe29f614ff021950e0d232515416db05f9bfe0a2194ea",
+    "repo/results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_summary.json": "2ee02884869566c84d1b9e4f5f60ae3fc15b371629b76d3a55fc8e66174e3cef",
+    "provenance/pack_gnn_action_v2_heldout_action_test.json": "59fd88d2bc6121ee6f004b6950acd32ad2cf79c69001912daada01c19c95ca58",
+    "provenance/pack_gnn_action_v2_ranking_fidelity.json": "7d19a807f89e84365d8dd2b7965260307abb53ae3c649bd2c27f04e52c3976d5"
+  },
+  "outputs": {
+    "figures/submission_v2/fig1_controller_architecture.png": "2c3ec64095a1ef34cc855aa4fd1a9ebb624a19955bdd7b628561035d795586aa",
+    "figures/submission_v2/fig2_canonical_paired_tradeoff.pdf": "7cbe170652b7107e79de68035b071a6d477d3b1551b41f262209e62b4169152e",
+    "figures/submission_v2/fig2_canonical_paired_tradeoff.png": "849b760b35a87800ae939e1f5af72a6dff867d3fe3b3ad1f85e2dd712414a714",
+    "figures/submission_v2/fig3_thermal_initial_condition.pdf": "5628b41ec34acb1368cb3e6538662e1cb120e747ebbc25ea7d3aeecfdfc2329a",
+    "figures/submission_v2/fig3_thermal_initial_condition.png": "e1ee634d0d700ba517e4f23cab3ac740bb744e78605fb83feafbb395d75be51a",
+    "figures/submission_v2/fig4_hust_paired_tradeoff.pdf": "717799d4bda271fb81e67b877d800e404d80815f49becc3a02e632308153ac6a",
+    "figures/submission_v2/fig4_hust_paired_tradeoff.png": "5a3acabe4dda7634c48c8e7f627c4931cdebe12a25eb4962fdeaa3d982d2a702",
+    "figures/submission_v2/fig5_surrogate_ranking_fidelity.pdf": "88d1d220466f653f47bf5e4996275920abc2c81387289370ae0900d668ff2703",
+    "figures/submission_v2/fig5_surrogate_ranking_fidelity.png": "f7e2ea2d61d25c2382e4bc0a90df6c064998707eb5eaf37180652e1950053e73",
+    "figures/submission_v2/figS1_action_conditioning.pdf": "a6ff43d0fee2ace61d468973891077b8ab58cddcd921211f3a7ce6ff9606aece",
+    "figures/submission_v2/figS1_action_conditioning.png": "4b098e99eb289d1494efdf400518b60239bd7f9a47786bce2aa1225207455c24"
+  },
+  "scientific_note": "Figures 2-5 and S1 are derived from frozen v2 computational evidence. Figure 1 is a manually prepared explanatory architecture schematic. No experiment was rerun and no frozen computational-evidence file was modified.",
+  "updated_utc": "2026-10-06T14:35:29.701534+00:00",
+  "figure_policy": {
+    "fig1_controller_architecture.png": "Manually prepared publication schematic; preserved and not regenerated.",
+    "fig2_to_fig5_and_figS1": "Generated from frozen v2 computational evidence."
+  },
+  "frozen_computational_evidence_git_head": "a28143ea3bb60081214ae9aa91e9051b1c202e72"
+}

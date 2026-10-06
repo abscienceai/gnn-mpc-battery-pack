@@ -1,5 +1,0 @@
-method,charge_time_min,charge_time_std,sigma_SOC_pct,sigma_SOC_std,T_max_C,delta_T_C,delta_T_std,aging_proxy_e4,violations,runtime_s,n_episodes
-CC-CV,14.8333,0.3727,3.2226,0.8838,26.6813,0.1807,0.0775,7.476,0.0333,0.6,30
-MSCC,18.6333,0.4819,2.9725,0.6097,26.3893,0.1168,0.0436,7.4776,0.0,0.3,30
-ThermalAwareProportional,15.0,0.0,0.1193,0.0531,26.7117,0.3433,0.1272,7.528,0.0,0.3,30
-GraphOptimizer,38.6333,1.663,0.3638,0.0874,26.2273,0.0185,0.0083,10.7582,0.0,4885.4,30

@@ -1,33 +1,310 @@
-# Reproducibility notes
+# Reproducibility
 
-## Environment
+## 1. Scope
 
-The submission freeze is designed for Python 3.10+ and the compatible package ranges in `requirements.txt`. The manuscript run environment used an NVIDIA L40S GPU, Ubuntu 24.04, CUDA 12.1 and PyTorch 2.4.1.
+This document describes the final publication workflow for the 12-cell LFP GraphOptimizer study.
 
-## Deterministic episode protocol
+The final evaluation scope is MATR plus HUST only.
 
-Primary controller evaluations use `seed = 7 * episode_index`. Both NumPy and PyTorch random states are initialised once per episode. CEM uses NumPy's episode-seeded random stream; there is no separate CEM-specific seed.
+MATR informs the LFP ECM/SOH parameterization used by the simulated plant. HUST is used as a held-out measured charging-protocol source.
 
-## Primary results
+## 2. Environment
 
-Run from repository root:
+Publication-snapshot server environment:
 
-```bash
-python3 src/safe_fast_charge_optimizer.py --chemistry LFP --n_episodes 30
-python3 src/safe_fast_charge_optimizer.py --chemistry NMC --n_episodes 30
-python3 src/safe_fast_charge_optimizer.py --chemistry LCO --n_episodes 30
+```text
+Python       3.10.12
+NumPy        1.26.4
+pandas       2.3.3
+SciPy        1.15.3
+PyTorch      2.4.1+cu121
+matplotlib   3.10.9
+pyarrow      25.0.1
 ```
 
-The frozen canonical outputs used by the manuscript are retained under `results/canonical_*_actuatormatch_v2_postpatch/`.
-
-## Fair architecture ablation
+Install the required packages with:
 
 ```bash
-python3 src/fair_ablation.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-This compares independently trained Full-GNN, No-edge-GNN and MLP surrogates under the same H=1 protocol and writes both episode-level and summary outputs to `results/fair_ablation/`.
+PyTorch Geometric and scikit-learn are not required by the final publication code.
 
-## Important protocol distinction
+## 3. Frozen Inputs
 
-Some ablation and diagnostic scripts intentionally use different horizons, CEM sample budgets, stress cases or seed protocols. Those results are not interchangeable with the primary LFP/NMC/LCO values. See `RESULTS_MANIFEST.md` and the corresponding manuscript notes before comparing values across files.
+### ECM table
+
+```text
+results/ecm/ecm_params_20260630_202031.parquet
+```
+
+SHA256:
+
+```text
+5580ff78d2518c645588d5bdd58ace96507e14bb2622dd6e26cf080397d94988
+```
+
+### PackGNN v2 checkpoint
+
+```text
+results/models/pack_gnn_action_v2_20261003_232518.pt
+```
+
+SHA256:
+
+```text
+2f3acc96e77504be0a060f5bee9bb2263b62df08c8fcd2afca353005c02e0b5f
+```
+
+The checkpoint is action-conditioned and uses a rollout-group-safe train/validation split.
+
+## 4. PackGNN v2 Training
+
+The final training configuration used:
+
+```text
+rollouts       5000
+cells          12
+chemistry      LFP
+epochs         50
+batch size     128
+learning rate  1e-3
+seed           42
+```
+
+Command:
+
+```bash
+python src/train_gnn.py \
+  --n_rollouts 5000 \
+  --epochs 50 \
+  --batch 128 \
+  --lr 0.001 \
+  --n_cells 12 \
+  --chemistry LFP \
+  --seed 42 \
+  --device auto
+```
+
+The frozen publication checkpoint is already included. Retraining may produce small hardware- or library-dependent floating-point differences.
+
+## 5. Canonical Paired N=30 Evaluation
+
+Command:
+
+```bash
+python src/run_canonical_lfp_n30.py
+python src/analyze_canonical_lfp_n30.py
+```
+
+Protocol:
+
+- 30 deterministic seeds: 0, 7, 14, ..., 203;
+- 12 LFP cells;
+- initial mean SOC approximately 0.20;
+- target mean SOC 0.80;
+- 60 s control interval;
+- cell-current limit 3C;
+- pack-average current limit 2.5C;
+- voltage limits 2.0 to 3.5 V;
+- temperature limits -10 to 45 C;
+- SOC limits 0.05 to 0.98.
+
+Controllers:
+
+```text
+CC-CV
+CC-CV-Balance
+Proportional
+Physics-CEM
+GraphOptimizer
+```
+
+Physics-CEM and GraphOptimizer use a matched CEM budget:
+
+```text
+H = 5
+K = 64
+elite = 16
+iterations = 5
+```
+
+Both use the same downstream 60/40 blend, actuator projection, and one-step model-based safety verification.
+
+Outputs:
+
+```text
+results/canonical_lfp_n30/
+```
+
+## 6. Thermal Initial-Condition Control
+
+Command:
+
+```bash
+python src/run_thermal_initial_condition_control.py
+```
+
+This diagnostic uses 30 seeds that are disjoint from the canonical evaluation and evaluates:
+
+```text
+heterogeneous_T
+uniform_25C
+```
+
+for Physics-CEM and GraphOptimizer.
+
+Outputs:
+
+```text
+results/diagnostics/thermal_initial_condition_n30/
+```
+
+## 7. HUST Measured-Protocol Replay
+
+Prepare processed HUST BatteryML files under:
+
+```text
+data/processed/BatteryML/HUST/
+```
+
+Then run:
+
+```bash
+python src/run_hust_timestamp_replay_v2.py
+python src/analyze_hust_timestamp_replay_v2.py
+```
+
+HUST supplies measured current, time, and voltage trajectories. The current trajectories are interpolated on a physical 60 s time grid.
+
+The simulated response remains generated by the MATR-informed study plant. This is external measured-protocol replay, not external plant validation.
+
+Outputs:
+
+```text
+results/diagnostics/hust_timestamp_replay_v2_n30/
+```
+
+## 8. Software Timing
+
+Command:
+
+```bash
+python src/run_controller_timing_validation.py
+```
+
+The timed region includes `controller.get_currents(...)` plus common actuator projection, with CUDA synchronization around timing.
+
+The results establish software deadline feasibility for the study's 60 s control interval on the reported compute platform. They are not HIL or embedded real-time validation.
+
+Outputs:
+
+```text
+results/diagnostics/controller_timing_validation/
+```
+
+## 9. Action-Conditioning Diagnostic
+
+Frozen evidence:
+
+```text
+provenance/pack_gnn_action_v2_heldout_action_test.json
+```
+
+The diagnostic contains 500 independent held-out rollouts and 2,901 samples.
+
+The original one-off 500-rollout generator was not retained in the final source tree. The archived JSON is therefore supplied as frozen diagnostic evidence rather than presented as directly regenerable source output.
+
+`src/smoke_action_gnn_v2.py` provides a smaller independent action-sensitivity smoke test.
+
+## 10. Candidate-Ranking Diagnostic
+
+Frozen evidence:
+
+```text
+provenance/pack_gnn_action_v2_ranking_fidelity.json
+```
+
+Protocol:
+
+```text
+30 diagnostic states
+64 candidate actions per state
+H = 5
+SOC range 0.20 to 0.76
+```
+
+The original one-off ranking generator was not retained. The JSON is supplied as frozen diagnostic evidence.
+
+## 11. Figure Generation
+
+Figure 1:
+
+```text
+figures/submission_v2/fig1_controller_architecture.png
+```
+
+is the manually prepared explanatory architecture schematic. It is intentionally not overwritten by the figure scripts.
+
+Its SHA256 is:
+
+```text
+2c3ec64095a1ef34cc855aa4fd1a9ebb624a19955bdd7b628561035d795586aa
+```
+
+Figures 2-5 and Supplementary Figure S1 are derived from the frozen final evidence.
+
+Run:
+
+```bash
+python src/generate_submission_figures_v2.py
+python src/refine_submission_figures_v2.py
+```
+
+The figure manifest is:
+
+```text
+figures/submission_v2/figure_manifest.json
+```
+
+## 12. Frozen Evidence Versus Publication Packaging
+
+The computational-evidence freeze is recorded in:
+
+```text
+provenance/submission_evidence_freeze_20261004.json
+```
+
+at Git commit:
+
+```text
+a28143ea3bb60081214ae9aa91e9051b1c202e72
+```
+
+Later publication-branch edits are packaging/reproducibility changes, including:
+
+- removal of obsolete development experiments;
+- repository-local provenance paths;
+- final documentation;
+- final colored Figure 1 packaging;
+- figure-script protection against overwriting manual Figure 1.
+
+The historical manifest remains an immutable record of the original frozen computational state.
+
+## 13. Claim Boundaries
+
+The reported zero-violation results are empirical observations in the evaluated episodes.
+
+The one-step safety filter is not a formal recursive-feasibility guarantee.
+
+PackGNN does not contain a voltage-prediction head.
+
+The ageing quantity is a model-based proxy.
+
+The HUST experiment is external protocol replay, not external plant validation.
+
+The timing experiment is software timing, not hardware-in-the-loop validation.
+
+Independent per-cell currents require an appropriate realizable hardware architecture.

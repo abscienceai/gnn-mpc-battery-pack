@@ -1,180 +1,263 @@
 # Graph-Guided MPC for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs
 
-Reference implementation for **"Graph-Guided Model Predictive Control for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs."**
+Repository for the manuscript:
 
-**Authors:** Alper Bingöl¹, Mücahit Soylu², Ali Baheri³  
-¹ Department of Physics, Faculty of Arts and Sciences, İnönü University, Malatya, Turkey · ² Department of Software Engineering, Faculty of Engineering, İnönü University, Malatya, Turkey · ³ Department of Mechanical Engineering, Safe AI Lab, Rochester Institute of Technology, NY, USA
+**Graph-Guided Model Predictive Control for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs**
 
-**Status:** Manuscript prepared for submission. See `CITATION.cff` for citation metadata. This will be updated with journal, volume, and DOI upon acceptance.
-
----
+Alper Bingöl, Mücahit Soylu, and Ali Baheri.
 
 ## Overview
 
-This repository implements **GraphOptimizer**, a graph-guided safety-aware current-allocation framework for heterogeneous lithium-ion battery packs. Cells are modeled as nodes of a dynamic graph; thermal-adjacency edges encode inter-cell temperature, SOC-difference, and distance features. A Graph Neural Network (**PackGNN**), trained on 5,000 simulated rollouts using ECM parameters informed by 419,657 real charge/discharge cycles, serves as a fast multi-step surrogate inside a Model Predictive Control loop solved by the Cross-Entropy Method (CEM).
+This repository contains the final publication code, frozen model checkpoint, evaluation outputs, diagnostics, provenance records, and figures for a graph-guided model predictive charging framework.
 
-This is a **real-data-informed simulation study**, not a physical pack-level validation. All results below are computational; see the manuscript's Limitations section for the physical-validation roadmap.
+The primary study considers a 12-cell LFP pack. GraphOptimizer uses an explicitly action-conditioned PackGNN v2 surrogate inside CEM-based MPC. Its matched Physics-CEM comparator uses direct ECM/thermal rollouts with the same search budget and downstream action-processing chain.
 
-## Key Results
+Both optimization controllers use:
 
-**Primary evaluation (12-cell LFP pack, N=30 episodes, `src/safe_fast_charge_optimizer.py`):**
+- horizon H = 5;
+- 64 CEM candidates per iteration;
+- elite size 16;
+- 5 CEM iterations;
+- the same 60/40 base-action to SOC-deficit blend;
+- the same actuator projection;
+- the same one-step model-based safety verification.
 
-| Controller | Time (min) | σ_SOC (%) | ΔT (°C) | Violations/ep |
-|---|---|---|---|---|
-| CC-CV | 14.7 | 3.22 | 0.18 | 0.03 |
-| CC-CV-Balance | 14.7 | 1.95 | 0.22 | 0.0 |
-| Proportional | 14.7 | 0.10 | 0.37 | 0.0 |
-| SimpleMPC (physics-only MPC) | 30.5 | 4.07 | 0.38 | 0.0 |
-| **GraphOptimizer** | 34.6 | **0.39** | **0.03** | **0.0** |
+The study assumes independent per-cell charging-current commands. Practical deployment therefore requires suitable cell-level power electronics, bypass converters, or another architecture capable of realizing those commands.
 
-All controllers are evaluated under a common per-cell and pack-level actuator-current constraint. On the trained chemistry (LFP), GraphOptimizer reduces SOC imbalance by 87.9% and inter-cell thermal gradient by 82.0% relative to CC-CV, at the cost of longer charging time. This reflects a deliberate safety-first operating point rather than a throughput-maximizing one.
+## Final Canonical LFP Evaluation
 
-## Important: Cross-Chemistry Safety Is Chemistry-Dependent
+Thirty paired 12-cell LFP episodes were evaluated using the same initial pack realization for every controller within a seed.
 
-Zero-shot transfer of the LFP-trained controller to NMC and LCO packs (no retraining) gives a genuinely mixed result, and we report it as such:
+| Controller | Charge time (min) | Final SOC sigma (%) | Peak T (C) | Final thermal gradient (C) | Observed violations |
+|---|---:|---:|---:|---:|---:|
+| CC-CV | 15.067 | 3.2209 | 26.641 | 0.1721 | 1 total |
+| CC-CV-Balance | 15.000 | 1.7509 | 26.670 | 0.2153 | 0 |
+| Proportional | 15.000 | 0.1182 | 26.742 | 0.3373 | 335 total |
+| Physics-CEM | 25.033 | 0.4144 | 26.257 | 0.1160 | 0 |
+| GraphOptimizer | 21.633 | 0.3663 | 26.319 | 0.1553 | 0 |
 
-| Chemistry | CC-CV violations/ep | GraphOptimizer violations/ep | Outcome |
-|---|---|---|---|
-| NMC | 93.6 | **15.4** | Large safety improvement |
-| LCO | 25.8 | **67.1** | **No improvement**; exceeds CC-CV and CC-CV-Balance (24.5) |
+For the paired GraphOptimizer versus Physics-CEM comparison:
 
-A companion surrogate ablation (`src/cross_chem_ablation.py`, `src/fair_ablation.py`) shows the same asymmetry. A **genuinely retrained** No-edge GNN (no graph message passing) outperforms the full graph-based GraphOptimizer on **both** SOC balance and violation count, specifically on LCO, while the graph-based model is clearly better on LFP and NMC. We do not currently have a mechanistic explanation for why the relational-transfer benefit fails on this specific chemistry. This is flagged as an open problem in the manuscript's Limitations section rather than being smoothed over.
+- GraphOptimizer charged 3.40 min faster on average, approximately 13.6%;
+- both controllers had zero observed safety violations in the 30 canonical episodes;
+- the SOC-imbalance difference was not statistically significant;
+- GraphOptimizer had a larger final thermal gradient by approximately 0.039 C;
+- the ageing proxy was approximately 5.1% lower for GraphOptimizer;
+- the energy difference was not statistically significant.
 
-**Practical takeaway:** the released checkpoint is a strong candidate controller for LFP, its trained chemistry, and shows a real, substantial safety benefit under zero-shot transfer to NMC. It should **not** be assumed safe for LCO packs without chemistry-specific validation or retraining.
+These results do not establish universal superiority or Pareto dominance.
+
+## HUST Measured-Protocol Replay
+
+HUST supplies held-out measured charging-current, time, and voltage trajectories. The trajectories are resampled in physical time at 60 s intervals.
+
+The simulated plant remains the study's MATR-informed LFP ECM/thermal plant. Therefore this experiment is an **external measured-protocol replay**, not external plant validation.
+
+Against Physics-CEM in the paired HUST replay:
+
+- GraphOptimizer charged approximately 13.8% faster;
+- SOC-imbalance difference was not statistically significant;
+- GraphOptimizer had a larger final thermal gradient;
+- the ageing proxy was approximately 5.2% lower;
+- both controller arms had zero observed study-constraint violations.
+
+`HUST-Raw` is an unconstrained external-profile reference and is not actuator-fair. `HUST-Projected` applies the study's common actuator projection.
+
+## Additional Diagnostics
+
+### Action conditioning
+
+The frozen held-out action intervention contains 500 independent rollouts and 2,901 samples. Zeroing or shuffling the candidate-action input substantially worsens SOC and temperature-change prediction, providing direct evidence that PackGNN v2 uses its action input.
+
+The original one-off generator for this 500-rollout diagnostic was not retained. The frozen diagnostic JSON is included under `provenance/`. `src/smoke_action_gnn_v2.py` provides a smaller independent action-sensitivity smoke test, but it is not presented as a reproduction of the 500-rollout experiment.
+
+### Candidate-ranking fidelity
+
+The frozen ranking diagnostic evaluates 30 independent states with 64 candidate actions per state and horizon H = 5.
+
+Mean Spearman correlation was approximately:
+
+- 0.585 against the shared surrogate-compatible objective;
+- 0.833 against the complete downstream physics objective.
+
+Ranking was informative overall but was not uniformly reliable across the entire SOC range. PackGNN v2 has no voltage-prediction head.
+
+The original one-off ranking-diagnostic generator was not retained. The frozen diagnostic JSON is included under `provenance/`.
+
+### Thermal initial-condition control
+
+The Graph-versus-Physics thermal-gradient difference persisted when all cells were initialized at 25 C. The temperature-condition interaction was not statistically significant. The observed thermal difference therefore cannot be attributed solely to heterogeneous initial temperature.
+
+### Software controller timing
+
+Timing measurements are software-only and are not HIL validation.
+
+On the reported Xeon Gold 6430 plus NVIDIA L40S platform:
+
+- Physics-CEM median decision latency: approximately 0.602 s;
+- GraphOptimizer median decision latency: approximately 2.076 s;
+- both had zero 60 s deadline misses.
+
+GraphOptimizer was approximately 3.45 times slower computationally than Physics-CEM despite producing shorter charging times in the evaluation episodes.
+
+## Safety Claim Boundary
+
+The final canonical LFP limits are:
+
+- SOC: 0.05 to 0.98;
+- temperature: -10 to 45 C;
+- voltage: 2.0 to 3.5 V.
+
+The final safety filter performs one-step model-based verification after action blending and actuator projection. Zero observed violations in the reported Physics-CEM and GraphOptimizer experiments are empirical results. They are not a formal recursive-feasibility or closed-loop safety guarantee.
+
+## Data Scope
+
+The final manuscript scope uses:
+
+- **MATR**: informs the LFP ECM/SOH parameterization and simulated evaluation plant;
+- **HUST**: supplies held-out measured current/time/voltage charging protocols.
+
+CALCE, RWTH, NASA, Oxford, NMC, and LCO experiments from earlier development stages are not part of the final publication evaluation and have been removed from this publication branch.
+
+See `data/README.md`.
 
 ## Repository Structure
 
 ```text
-src/
-  graph_battery_pack.py           Dynamic graph pack simulator, ECM/thermal/aging models, PackGNN
-  safe_fast_charge_optimizer.py   GraphGuidedOptimizer (MPC-CEM), all baseline controllers, run_experiment()
-  train_gnn.py                    PackGNN training (5,000 rollouts)
-  train_mlp_fair.py               Flat-MLP surrogate, trained from scratch for fair comparison
-  train_node_only_gnn.py          Edge-disabled GNN, trained from scratch for fair comparison
-
-  # Cross-chemistry
-  cross_chem_ablation.py          Full GNN vs. genuinely-trained No-edge GNN vs. MLP, on NMC/LCO
-  fair_ablation.py                Canonical source for Table 11 (cross-chem surrogate ablation)
-
-  # Ablations
-  ablation_study.py                Component ablation (CEM, Pure Greedy, No-edge-at-inference)
-  no_deltaT_ablation.py            Effect of removing the thermal-gradient cost term
-  cost_component_breakdown.py      Per-term contribution to the stage cost
-  pure_greedy_stress.py            GraphOptimizer vs. Pure Greedy across 7 stress scenarios
-  horizon_adversarial.py           H=1 vs. H=5 across initial-SOC-heterogeneity levels
-  horizon_wise_mae.py              Surrogate rollout prediction error by horizon step
-  simplempc_matched.py             SimpleMPC matched-budget comparison
-  mlp_mpc_baseline.py              MLP surrogate vs. GraphOptimizer, primary LFP setting
-
-  # Robustness / real-data validation
-  bigru_error_injection.py         Closed-loop robustness to SOC-estimation error models
-  hardware_aware_validation.py     Pseudo-HIL: ADC noise, latency, slew-rate constraints
-  offline_replay_validation.py     MATR closed-loop replay, strict train/test separation, parameter mismatch
-  independent_checkpoint_test.py   Frozen-checkpoint SOC/ΔT generalisation test on independently-resampled cells
-  lyapunov_empirical_check.py      Empirical verification of Theorem 1's sufficient conditions
-  regenerate_extended_baselines.py MSCC / Thermal-Aware Proportional baselines
-  mscc_thermal_baselines.py
-
-  # Sensitivity sweeps
-  beta_dT_sensitivity.py, weight_sweep.py, rollout_sensitivity.py
-
-  # Statistics and figures
-  paired_statistical_tests.py      Paired t-test / Wilcoxon, GraphOptimizer vs. CC-CV
-  generate_figures.py              All 12 data-driven manuscript figures
-  generate_fig_attention.py        GNN edge-importance interpretability figure
-
-results/
-  models/                          Trained checkpoints (PackGNN, No-edge GNN, fair MLP)
-  ecm/                             Extracted ECM parameters (parquet)
-  canonical_{LFP,NMC,LCO}_actuatormatch_v2_postpatch/   Primary N=30 evaluation results; all controllers share a common actuator constraint
-  packsize_{6,12,24}_actuatormatch_postpatch/            Scalability ablation (N=20), same common actuator constraint
-  failure_sigma0{15,25}_actuatormatch_postpatch/         Extreme initial-imbalance stress tests (N=20), same common actuator constraint
-  mismatch_hAfix_postpatch/                              Parameter-mismatch robustness (Table 8), corrected $h_A$ perturbation
-  hardware_validation_obsfix_postpatch/                  Pseudo-HIL results (Table 18), corrected to feed the controller its observed (noisy/delayed) state rather than the true state
-  independent_checkpoint_test/                           Frozen-checkpoint generalisation test on independently-resampled cells
-  replay_validation/                                     MATR closed-loop replay results (Table 17)
-  ablation_components/                                   Component ablation results
-  *.csv, *.json                                          Remaining experiment outputs (one per script above)
-
-data/           See data/README.md for dataset download instructions
-figures/        14 manuscript figures (PDF)
+.
+├── README.md
+├── REPRODUCIBILITY.md
+├── RESULTS_MANIFEST.md
+├── requirements.txt
+├── audit_submission_consistency.py
+├── data/
+│   └── README.md
+├── figures/
+│   └── submission_v2/
+├── provenance/
+├── results/
+│   ├── canonical_lfp_n30/
+│   ├── diagnostics/
+│   ├── ecm/
+│   └── models/
+└── src/
 ```
 
-The manuscript LaTeX source is not included in this repository. See `CITATION.cff` for how to cite this work in the interim.
+## Environment
 
-## Requirements
+The final server environment used for the publication snapshot reports:
 
-```bash
-python >= 3.10
-torch >= 2.4.0, < 2.5.0
-```
+- Python 3.10.12
+- NumPy 1.26.4
+- pandas 2.3.3
+- SciPy 1.15.3
+- PyTorch 2.4.1 + CUDA 12.1 build
+- matplotlib 3.10.9
+- pyarrow 25.0.1
 
-Compatible version ranges are pinned in `requirements.txt`. Install into a virtual environment:
+The final code does not require PyTorch Geometric. The graph operations used by PackGNN are implemented within the repository.
+
+Create an environment with:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## Datasets
+## Main Reproduction Commands
 
-ECM parameters are extracted from four of the six public battery-cycling datasets listed below (419,657 of 427,857+ total cycles). The remaining two, NASA Randomized and Oxford Deg1, are used only for a generalisability check and a qualitative long-term degradation consistency check, respectively. See the table below. See `data/README.md` for download instructions via [BatteryML](https://github.com/microsoft/BatteryML) and the expected directory layout.
+Run commands from the repository root.
 
-| Dataset | Chemistry | Cells | Cycles | Used for |
-|---|---|---|---|---|
-| MATR | LFP | 180 | 154,231 | ECM extraction, primary training chemistry |
-| CALCE | LCO | 13 | 14,298 | ECM extraction, cross-chemistry evaluation |
-| RWTH | NMC | 48 | 105,006 | ECM extraction, cross-chemistry evaluation |
-| HUST | LFP | 77 | 146,122 | ECM extraction |
-| NASA (Randomized) | Li-ion | 59 | Not applicable | Generalizability check |
-| Oxford Deg1 | NMC | 8 | 8,200 | Independent SOH validation only |
-
-## Submission-Freeze Navigation
-
-- `RESULTS_MANIFEST.md` maps the manuscript headline and diagnostic analyses to their source result files.
-- `REPRODUCIBILITY.md` records the seed/environment protocol and exact rerun commands.
-- `audit_submission_consistency.py` performs a fast no-training consistency check.
-
-## Reproducing the Results
+### PackGNN v2 training
 
 ```bash
-# 1. Train the PackGNN (uses ECM parameters in results/ecm/)
-python3 src/train_gnn.py
-
-# 2. Primary LFP evaluation (Table 5)
-python3 src/safe_fast_charge_optimizer.py --chemistry LFP --n_episodes 30
-
-# 3. Cross-chemistry evaluation (Table 10)
-python3 src/safe_fast_charge_optimizer.py --chemistry NMC --n_episodes 30
-python3 src/safe_fast_charge_optimizer.py --chemistry LCO --n_episodes 30
-
-# 4. Cross-chemistry surrogate ablation (Table 11)
-python3 src/fair_ablation.py
-
-# 5. Regenerate all figures
-cd src && python3 generate_figures.py && python3 generate_fig_attention.py
+python src/train_gnn.py \
+  --n_rollouts 5000 \
+  --epochs 50 \
+  --batch 128 \
+  --lr 0.001 \
+  --n_cells 12 \
+  --chemistry LFP \
+  --seed 42 \
+  --device auto
 ```
 
-All pack initializations use episode-specific seeds (`seed = 7 × episode_index`) for exact reproducibility given identical code, package versions, and hardware. See Appendix C of the manuscript for full reproducibility details and the hyperparameter table.
+The publication repository already includes the frozen final checkpoint:
 
-## Trained Checkpoints
+```text
+results/models/pack_gnn_action_v2_20261003_232518.pt
+```
 
-| Checkpoint | Role |
-|---|---|
-| `results/models/pack_gnn_20260630_220402.pt` | PackGNN (84,804 params), primary surrogate used throughout |
-| `results/models/node_only_gnn_20260714_040356.pt` | No-edge GNN, trained from scratch (85,572 params), Table 11/13 fair ablation |
-| `results/models/pack_mlp_fair5k_20260718_185127.pt` | Flat MLP surrogate, trained from scratch (126,245 params), Table 11/13 fair ablation |
+### Canonical paired LFP N=30 evaluation
+
+```bash
+python src/run_canonical_lfp_n30.py
+python src/analyze_canonical_lfp_n30.py
+```
+
+### Thermal initial-condition diagnostic
+
+```bash
+python src/run_thermal_initial_condition_control.py
+```
+
+### HUST physical-time protocol replay
+
+After preparing the HUST BatteryML files as described in `data/README.md`:
+
+```bash
+python src/run_hust_timestamp_replay_v2.py
+python src/analyze_hust_timestamp_replay_v2.py
+```
+
+### Software controller timing
+
+```bash
+python src/run_controller_timing_validation.py
+```
+
+### Publication figures
+
+Figure 1 is the manually prepared publication schematic and is intentionally preserved by the figure scripts.
+
+Figures 2-5 and Supplementary Figure S1 are generated from the frozen evidence:
+
+```bash
+python src/generate_submission_figures_v2.py
+python src/refine_submission_figures_v2.py
+```
+
+### Final repository audit
+
+```bash
+python audit_submission_consistency.py
+git diff --check
+```
+
+See `REPRODUCIBILITY.md` for protocol details and `RESULTS_MANIFEST.md` for the mapping between scripts, evidence files, and manuscript results.
+
+## Frozen Computational Evidence
+
+The original computational-evidence freeze was made at commit:
+
+```text
+a28143ea3bb60081214ae9aa91e9051b1c202e72
+```
+
+The historical manifest is:
+
+```text
+provenance/submission_evidence_freeze_20261004.json
+```
+
+The publication branch contains later packaging-only changes such as repository cleanup, portable provenance paths, documentation, and final figure packaging. Therefore source-file hashes in the historical freeze manifest refer to the frozen evidence commit, not necessarily to the later publication-packaging commit.
 
 ## Citation
 
-Citation metadata is maintained in `CITATION.cff`. The manuscript is currently prepared for submission. Please check back for the final published reference, or cite this repository directly in the interim.
+See `CITATION.cff`.
 
 ## License
 
-MIT License. See `LICENSE`.
-
-## Contact
-
-Alper Bingöl  
-alper1ton@gmail.com
+MIT License.

@@ -1,0 +1,20 @@
+{
+  "checkpoint": "results/models/pack_gnn_action_v2_20261003_232518.pt",
+  "sha256": "2f3acc96e77504be0a060f5bee9bb2263b62df08c8fcd2afca353005c02e0b5f",
+  "git_commit": "851bf29eb73d13f5a3603dcab121ae5fa9e261b1",
+  "model_format_version": 2,
+  "action_conditioned": true,
+  "split_method": "group_by_rollout_id",
+  "best_epoch": 49,
+  "best_val_loss": 0.0024769734148947548,
+  "best_metrics": {
+    "soc_mae": 0.0008945943552751446,
+    "dT_mae": 0.034893548462571665,
+    "imbalance_mae": 0.009347314055150033
+  },
+  "n_train_rollouts": 4250,
+  "n_val_rollouts": 750,
+  "n_train_pack_seeds": 4250,
+  "n_val_pack_seeds": 750,
+  "canonical_eval_seed_overlap": 0
+}

@@ -1,0 +1,184 @@
+{
+  "freeze_name": "Graph-Guided Energy and AI submission evidence freeze",
+  "created_utc": "2026-10-04T03:10:00.878009+00:00",
+  "git_head_before_documentation_commit": "210663b76ba2911f6ea5bce08c84ae5a47dc3936",
+  "canonical_claims": {
+    "primary_comparator": "matched Physics-CEM",
+    "canonical_n": 30,
+    "canonical_lfp_voltage_limits_V": [
+      2.0,
+      3.5
+    ],
+    "soc_safety_range": [
+      0.05,
+      0.98
+    ],
+    "temperature_safety_range_C": [
+      -10.0,
+      45.0
+    ],
+    "graph_vs_physics": {
+      "charging_time_relative_difference_pct": -13.58,
+      "soc_sigma_difference_statistically_significant": false,
+      "thermal_gradient_direction": "GraphOptimizer higher",
+      "aging_proxy_relative_difference_pct": -5.1,
+      "observed_constraint_violations_graph": 0,
+      "observed_constraint_violations_physics": 0
+    },
+    "hust_external_protocol_replay": {
+      "n": 30,
+      "charging_time_relative_difference_pct": -13.77,
+      "soc_sigma_difference_statistically_significant": false,
+      "thermal_gradient_direction": "GraphOptimizer higher",
+      "aging_proxy_relative_difference_pct": -5.2,
+      "observed_constraint_violations_graph": 0,
+      "observed_constraint_violations_physics": 0,
+      "claim_boundary": "External measured HUST current/time/voltage protocol replay on the study MATR-informed ECM/thermal plant; not external plant validation."
+    },
+    "thermal_initial_condition_control": {
+      "result": "GraphOptimizer thermal-gradient disadvantage persists under uniform 25 C initialization.",
+      "interaction_statistically_significant": false
+    },
+    "software_timing": {
+      "control_interval_s": 60.0,
+      "physics_p95_s": 0.6181,
+      "graph_p95_s": 2.1097,
+      "physics_deadline_misses": 0,
+      "graph_deadline_misses": 0,
+      "claim_boundary": "Software control-loop timing feasibility only; not hardware-in-the-loop validation."
+    }
+  },
+  "model_scope": {
+    "ecm_description": "dataset-informed ECM parameterization",
+    "data_derived_parameters": [
+      "R0 from IR_ohm",
+      "SOH"
+    ],
+    "chemistry_default_parameters": [
+      "R1",
+      "C1",
+      "base open-circuit voltage",
+      "base nominal capacity"
+    ],
+    "independent_cell_current_requirement": "Requires cell-level converters, bypass elements, or another reconfigurable architecture capable of independently commanding cell currents."
+  },
+  "prohibited_overclaims": [
+    "Do not claim formal recursive safety guarantee.",
+    "Do not claim hardware HIL.",
+    "Do not claim fully external HUST plant validation.",
+    "Do not claim statistically significant SOC-balance superiority over Physics-CEM.",
+    "Do not claim GraphOptimizer has lower computation time than Physics-CEM.",
+    "Do not claim the GNN predicts voltage.",
+    "Do not describe the ECM as fully data-derived."
+  ],
+  "files": {
+    "results/canonical_lfp_n30/canonical_lfp_n30_raw.jsonl": {
+      "sha256": "ea729a28732181da9c910f2f35bed15d588895429e4347980e8b210d897f72ee",
+      "bytes": 250315
+    },
+    "results/canonical_lfp_n30/canonical_lfp_n30_summary.csv": {
+      "sha256": "80c0940cef9a4a706b8932b529668ae9b080e2d311286e4a2bcaaf034263d3b2",
+      "bytes": 1216
+    },
+    "results/canonical_lfp_n30/canonical_lfp_n30_summary.json": {
+      "sha256": "a9e3d16daa3512722ea3d8e4fc2f1bc4e06afd79e78cc7b24b207681aae49b57",
+      "bytes": 11352
+    },
+    "results/canonical_lfp_n30/statistics/descriptive_statistics.csv": {
+      "sha256": "8de653976883e486adf185fe9126afdd44b88438eb7e1455d454bac422f28c7b",
+      "bytes": 1560
+    },
+    "results/canonical_lfp_n30/statistics/paired_statistics.csv": {
+      "sha256": "e5f7cacf3f0cf41bb8ebd2278f59027917b0a331a94f6b72b31343d2b5c53941",
+      "bytes": 8163
+    },
+    "results/canonical_lfp_n30/statistics/safety_statistics.csv": {
+      "sha256": "a2fff3c52a9a82484cef3b193532109deada7b914d6ed6b59774d1afcd9c0ee3",
+      "bytes": 439
+    },
+    "results/diagnostics/thermal_initial_condition_n30/thermal_initial_condition_raw.jsonl": {
+      "sha256": "b6cee2d72fd96d1a6b9a168e357eae1607600abcb03be4e8c6b90269b4b95e8a",
+      "bytes": 87044
+    },
+    "results/diagnostics/thermal_initial_condition_n30/thermal_initial_condition_statistics.csv": {
+      "sha256": "d7e4dfa3eb7e7ce67310ef7a0339aebd02f42d80149066e923939875761f54a7",
+      "bytes": 701
+    },
+    "results/diagnostics/thermal_initial_condition_n30/thermal_initial_condition_summary.json": {
+      "sha256": "cd42ad3dac697620b42491057f13243fb099b589669a210f75557fbbe1138758",
+      "bytes": 1378
+    },
+    "results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_provenance.json": {
+      "sha256": "be4857900a67685a4a691da4698e06dd0cd10279e3c62606b2438228cdbabd20",
+      "bytes": 1416
+    },
+    "results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_raw.jsonl": {
+      "sha256": "27177ed5f8d00abfff8f21871e1df6437096a87eb4c876e209653e8c5e5e2edd",
+      "bytes": 129593
+    },
+    "results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_safety.csv": {
+      "sha256": "6b04cf7eddeb7e6b19de0797ee5f635e85e30fdb2e9221e1d4891b4d3b062145",
+      "bytes": 434
+    },
+    "results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_statistics.csv": {
+      "sha256": "9c6979df2178d417018fe29f614ff021950e0d232515416db05f9bfe0a2194ea",
+      "bytes": 3406
+    },
+    "results/diagnostics/hust_timestamp_replay_v2_n30/hust_timestamp_replay_v2_summary.json": {
+      "sha256": "2ee02884869566c84d1b9e4f5f60ae3fc15b371629b76d3a55fc8e66174e3cef",
+      "bytes": 1635
+    },
+    "results/diagnostics/controller_timing_validation/controller_timing_raw.csv": {
+      "sha256": "eaf4480f87eab865c7e9c9c5bcc7ea622fd074266f8227a02f162073446d5ed5",
+      "bytes": 9601
+    },
+    "results/diagnostics/controller_timing_validation/controller_timing_summary.json": {
+      "sha256": "80ed47761e2b8e3bd5ace029391adb08b27e1132113947ecbfa45b1bafe39f16",
+      "bytes": 838
+    },
+    "results/ecm/ecm_params_20260630_202031.parquet": {
+      "sha256": "5580ff78d2518c645588d5bdd58ace96507e14bb2622dd6e26cf080397d94988",
+      "bytes": 24026
+    },
+    "results/models/pack_gnn_action_v2_20261003_232518.pt": {
+      "sha256": "2f3acc96e77504be0a060f5bee9bb2263b62df08c8fcd2afca353005c02e0b5f",
+      "bytes": 539362
+    },
+    "src/run_canonical_lfp_n30.py": {
+      "sha256": "041840f65d8df0aa6fb03a934898fa2748e6588b3d45c29b416cb3c4c6354b92",
+      "bytes": 30113
+    },
+    "src/analyze_canonical_lfp_n30.py": {
+      "sha256": "ae6c0d00bfbab563493e15d669d477a72b01a76d3c5f22d5b9a2ff2115f0c865",
+      "bytes": 11864
+    },
+    "src/run_thermal_initial_condition_control.py": {
+      "sha256": "3ccf4122b57dc421ae3297f92e64b08a93152c53ca1b664b06b9b86c2aac7393",
+      "bytes": 21293
+    },
+    "src/run_hust_timestamp_replay_v2.py": {
+      "sha256": "ab6c4e4a06daca784452d46e8d3a3c12a5226549dfc8f5bebce38d914a8073df",
+      "bytes": 39122
+    },
+    "src/analyze_hust_timestamp_replay_v2.py": {
+      "sha256": "4a778faa1bf3f9441f8e5cdb81bd2121b50cef52b7667317eb755b86d9eef724",
+      "bytes": 10533
+    },
+    "src/run_controller_timing_validation.py": {
+      "sha256": "0cf141f61b2c3e1617de1bd2bfe2c7ec9cafb84b1b19664efbfbee6dca46b1fb",
+      "bytes": 15611
+    },
+    "src/graph_battery_pack.py": {
+      "sha256": "0cafe68612881bc42e0710f4937847d1ad21601c313142ce0d05c8870a7fb009",
+      "bytes": 32895
+    },
+    "src/safe_fast_charge_optimizer.py": {
+      "sha256": "5d20eae22611a974f32fd2c110bbb1c6ef943a64af34fb26ad707f943ff0e955",
+      "bytes": 46562
+    }
+  },
+  "freeze_manifest_version": 2,
+  "git_head_final": "a28143ea3bb60081214ae9aa91e9051b1c202e72",
+  "finalized_utc": "2026-10-04T03:14:04.325958+00:00",
+  "freeze_status": "FINAL \u2014 evidence files hash-verified after documentation-only safety-limit commit"
+}

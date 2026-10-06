@@ -1,5 +1,0 @@
-variant,charge_time_min,sigma_SOC_pct,sigma_SOC_std,T_max_C,delta_T_C,delta_T_std,aging_proxy_e4,violations,runtime_s,w_gradient_used
-Full Model (w_grad=3),38.63,0.3638,0.0874,26.23,0.019,0.008,10.7582,0.0,2106.2,3.0
-No ΔT Penalty (w_grad=0),38.97,0.3694,0.0919,26.23,0.024,0.011,10.8358,0.0,2117.7,0.0
-No Graph Edges,20.83,10.8822,1.7718,26.86,1.242,0.227,7.9401,5.97,392.9,3.0
-CC-CV,12.53,3.2226,0.874,27.11,0.255,0.111,7.8165,0.03,0.2,3.0

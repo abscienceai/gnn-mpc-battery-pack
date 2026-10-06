@@ -1,0 +1,30 @@
+[
+  {
+    "controller": "Physics-CEM",
+    "n": 30,
+    "mean_s": 0.585712411107185,
+    "median_s": 0.601888878038153,
+    "p95_s": 0.618121724599041,
+    "p99_s": 0.6200440409220755,
+    "max_s": 0.6203001411631703,
+    "deadline_s": 60.0,
+    "deadline_misses": 0,
+    "deadline_success_pct": 100.0,
+    "p95_deadline_utilization_pct": 1.030202874331735,
+    "max_deadline_utilization_pct": 1.0338335686052837
+  },
+  {
+    "controller": "GraphOptimizer",
+    "n": 30,
+    "mean_s": 2.073786427259135,
+    "median_s": 2.076261591981165,
+    "p95_s": 2.1096593408379705,
+    "p99_s": 2.122699974635616,
+    "max_s": 2.127067804103717,
+    "deadline_s": 60.0,
+    "deadline_misses": 0,
+    "deadline_success_pct": 100.0,
+    "p95_deadline_utilization_pct": 3.5160989013966173,
+    "max_deadline_utilization_pct": 3.5451130068395287
+  }
+]

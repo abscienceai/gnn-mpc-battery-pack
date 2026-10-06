@@ -43,10 +43,10 @@ SAFETY = (
     / "hust_timestamp_replay_v2_safety.csv"
 )
 
-FREEZE = Path(
-    "/home/msoylu/alper/Graph-Guided/"
-    "provenance/"
-    "hust_timestamp_replay_v2_n30_freeze.json"
+FREEZE = (
+    Path(__file__).resolve().parent.parent
+    / "provenance"
+    / "hust_timestamp_replay_v2_n30_freeze.json"
 )
 
 

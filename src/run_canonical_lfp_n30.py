@@ -57,8 +57,7 @@ OUT_DIR = (
 )
 
 PROV_DIR = (
-    ROOT.parent
-    / "provenance"
+    ROOT / "provenance"
 )
 
 OUT_DIR.mkdir(

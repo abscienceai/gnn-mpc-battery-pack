@@ -3,3 +3,45 @@ data/processed/BatteryML/
 __pycache__/
 *.py[cod]
 results/submission_revision/*smoke*/
+
+# ----------------------------------------------------------------------
+# Final-v2 publication exclusions
+# ----------------------------------------------------------------------
+
+# Python / local environments
+.venv/
+.venv-*/
+env/
+environment/
+*.egg-info/
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Large locally processed datasets
+data/processed/
+data/raw/
+data/raw_external/
+
+# Logs and temporary output
+logs/
+*.log
+*.tmp
+
+# Obsolete pre-matched canonical run
+results/canonical_lfp_n30_pre_matched_physics/
+
+# Smoke-only generated outputs
+results/submission_revision/action_gnn_smoke_models/
+
+# Figure QA files, not publication artifacts
+figures/submission_v2/figure_contact_sheet.png
+figures/submission_v2/figure_contact_sheet_final.png
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

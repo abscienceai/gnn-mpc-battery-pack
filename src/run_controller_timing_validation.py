@@ -73,11 +73,7 @@ OUT = (
       "controller_timing_validation"
 )
 
-PROVENANCE = Path(
-    "/home/msoylu/alper/Graph-Guided/"
-    "provenance/"
-    "controller_timing_validation.json"
-)
+PROVENANCE = ROOT / "provenance" / "controller_timing_validation.json"
 
 EXPECTED_ECM_SHA = (
     "5580ff78d2518c645588d5bdd58ace965"
