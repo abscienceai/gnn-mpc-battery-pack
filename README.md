@@ -4,7 +4,11 @@ Repository for the manuscript:
 
 **Graph-Guided Model Predictive Control for Safety-Aware Cell-Level Charging of Lithium-Ion Battery Packs**
 
-Alper Bingöl, Mücahit Soylu, and Ali Baheri.
+Alper Bingöl<sup>a,*</sup>, Mücahit Soylu<sup>b</sup> and Ali Baheri<sup>c</sup>  
+
+<sup>a</sup> Department of Physics, Faculty of Arts and Sciences, İnönü University, Malatya, Turkey  
+<sup>b</sup> Department of Software Engineering, Faculty of Engineering, İnönü University, Malatya, Turkey  
+<sup>c</sup> Department of Mechanical Engineering, Safe AI Lab, Rochester Institute of Technology, Rochester, NY, USA
 
 ## Overview
 
