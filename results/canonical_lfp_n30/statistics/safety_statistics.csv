@@ -1,0 +1,6 @@
+controller,episodes,target_successes,episodes_with_violation,total_cell_step_violations,maximum_peak_voltage_V,maximum_peak_temperature_C
+CC-CV,30,30,1,1,3.4999999999295373,27.41602187851447
+CC-CV-Balance,30,30,0,0,3.4999999990886463,27.438938110390765
+Proportional,30,30,30,335,3.5413682593112727,27.455123227690436
+Physics-CEM,30,30,0,0,3.499999999643988,27.246757830067647
+GraphOptimizer,30,30,0,0,3.4737921897700463,27.288521147108835

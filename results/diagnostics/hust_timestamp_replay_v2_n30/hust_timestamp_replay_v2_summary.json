@@ -1,0 +1,50 @@
+{
+  "HUST-Raw": {
+    "n": 30,
+    "target_successes": 30,
+    "mean_time_min": 7.966666666666667,
+    "mean_sigma_SOC_pct": 2.783086818492377,
+    "mean_final_dT_C": 0.5654817580600506,
+    "maximum_peak_voltage_V": 3.6686230960203763,
+    "total_explicit_study_violations": 903,
+    "episodes_with_explicit_violation": 30,
+    "mean_aging": 0.0009974717927711963,
+    "mean_energy_Wh": 26.550932039445584
+  },
+  "HUST-Projected": {
+    "n": 30,
+    "target_successes": 30,
+    "mean_time_min": 24.633333333333333,
+    "mean_sigma_SOC_pct": 2.78382468601578,
+    "mean_final_dT_C": 0.05986300638823146,
+    "maximum_peak_voltage_V": 3.4720407289900304,
+    "total_explicit_study_violations": 0,
+    "episodes_with_explicit_violation": 0,
+    "mean_aging": 0.0008509525073835957,
+    "mean_energy_Wh": 23.680686046969413
+  },
+  "Physics-CEM": {
+    "n": 30,
+    "target_successes": 30,
+    "mean_time_min": 24.933333333333334,
+    "mean_sigma_SOC_pct": 0.4127443681309116,
+    "mean_final_dT_C": 0.09665853384942551,
+    "maximum_peak_voltage_V": 3.49999999742289,
+    "total_explicit_study_violations": 0,
+    "episodes_with_explicit_violation": 0,
+    "mean_aging": 0.0008048688731722673,
+    "mean_energy_Wh": 23.474380172652598
+  },
+  "GraphOptimizer": {
+    "n": 30,
+    "target_successes": 30,
+    "mean_time_min": 21.5,
+    "mean_sigma_SOC_pct": 0.369522218940176,
+    "mean_final_dT_C": 0.143589828925579,
+    "maximum_peak_voltage_V": 3.479004214815305,
+    "total_explicit_study_violations": 0,
+    "episodes_with_explicit_violation": 0,
+    "mean_aging": 0.0007630031957132796,
+    "mean_energy_Wh": 23.54124881846632
+  }
+}

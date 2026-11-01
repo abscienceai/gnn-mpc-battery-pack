@@ -1,0 +1,1395 @@
+"""
+safe_fast_charge_optimizer.py
+==============================
+Dynamic Graph-Based Safe Fast Charging Optimization Project
+------------------------------------------------------------
+PURPOSE : Multi-objective safe fast charging optimizer for Li-ion battery packs.
+
+PROBLEM : Given a battery pack (dynamic graph), find the optimal per-cell
+          charging current profile I*(t) that:
+            1. Minimises charging time          (speed ↑)
+            2. Minimises SOC imbalance σ_SOC    (balance ↑)
+            3. Minimises temperature gradient ΔT (safety ↑)
+            4. Minimises cumulative aging cost   (longevity ↑)
+          Subject to:
+            - Voltage limits:    dataset/evaluation-specific; canonical LFP uses 2.0-3.5 V
+            - Temperature limit: T ≤ 45°C
+            - SOC limit:         SOC ≤ 0.98
+            - Current limits:    0 ≤ I_i ≤ I_max (per cell)
+            - Pack current:      ΣI_i ≤ I_pack_max
+
+METHOD  : Model Predictive Control (MPC) + Graph-Guided Current Allocation
+          At each control step:
+            1. PackGNN predicts next-state for candidate actions
+            2. Multi-objective cost computed
+            3. Gradient-free optimisation (CEM / rule-based fallback)
+          Compared against: CC-CV, CC-CV-Balance, Proportional baseline
+
+USAGE   :
+    python safe_fast_charge_optimizer.py
+        [--n_cells 12] [--chemistry LFP]
+        [--target_soc 0.8] [--I_max_C 3.0]
+        [--n_episodes 50] [--output_dir results/optimizer]
+        [--ecm_parquet results/ecm/ecm_params_*.parquet]
+
+AUTHOR  : <your name>
+DATE    : 2025
+"""
+
+import os
+import sys
+import json
+import time
+import pickle
+import argparse
+import warnings
+from pathlib import Path
+from datetime import datetime
+from copy import deepcopy
+
+import numpy as np
+
+warnings.filterwarnings("ignore")
+
+# ── Local imports ────────────────────────────────────────────────────────────
+sys.path.insert(0, str(Path(__file__).parent))
+from graph_battery_pack import (
+    BatteryPackGraph, PackGNN, CellState, build_pack_from_ecm
+)
+
+import torch
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  OPTIMISER CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+
+from evaluation_controllers import (
+    VoltageFeedbackCCCVController,
+    BalancedVoltageFeedbackCCCVController,
+    project_current_vector,
+    apply_dataset_voltage_limits,
+)
+
+def default_config():
+    return {
+        # Pack
+        "n_cells":        12,
+        "chemistry":      "LFP",
+        "T_amb":          25.0,
+        "soc_init":       0.20,
+        "soc_noise":      0.03,
+        "target_soc":     0.80,
+
+        # Electrical limits
+        "V_min":          2.50,
+        "V_max":          None,    # resolved from processed dataset metadata
+        "T_max":          45.0,
+        "I_max_C":        3.0,    # max C-rate per cell
+        "I_pack_max_C":   2.5,    # max pack-level average C-rate
+
+        # Control
+        "dt_s":           60.0,   # control step [s]
+        "horizon":        5,      # MPC look-ahead steps
+        "max_steps":      120,    # max steps per episode (~2h)
+
+        # Cost weights (λ)
+        "w_time":         4.0,
+        "w_imbalance":    3.0,
+        "w_temperature":  3.0,
+        "w_gradient":     3.0,
+        "w_aging":        2.0,
+        "w_violation":    50.0,
+
+        # CEM (Cross-Entropy Method)
+        "cem_samples":    64,
+        "cem_elite_frac": 0.25,
+        "cem_iterations": 5,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  COST FUNCTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+def compute_cost(metrics: dict, cfg: dict,
+                 steps_taken: int, done: bool) -> float:
+    """
+    Multi-objective cost for one control step.
+
+    Components:
+      time_cost     : penalty for each step not yet done
+      imbalance_cost: σ_SOC (standard deviation across cells)
+      temp_cost     : max temperature excess above comfort zone (38°C)
+      aging_cost    : cumulative degradation
+      violation_cost: hard constraint violations (V, T, SOC out of range)
+    """
+    cfg_w = cfg
+
+    # Time penalty: every step costs 1 unit unless done
+    time_cost = 0.0 if done else 1.0
+
+    # SOC imbalance
+    imbalance_cost = metrics["SOC_imbalance"]
+
+    # Temperature: penalise above 38°C (comfort limit, stricter than hard 45°C)
+    T_comfort = 38.0
+    temp_cost = max(metrics["T_max"] - T_comfort, 0.0) / 10.0
+
+    # Aging cost (already in per-step units)
+    # Inter-cell thermal gradient (explicit dT penalty, final objective)
+    gradient_cost = metrics["T_gradient"] / 10.0
+    aging_cost = metrics["aging_cost"] * 1e4   # scale up for visibility
+
+    # Violation penalty
+    violation_cost = float(metrics["n_violations"])
+
+    total = (
+        cfg_w["w_time"]        * time_cost +
+        cfg_w["w_imbalance"]   * imbalance_cost +
+        cfg_w["w_temperature"] * temp_cost +
+        cfg_w["w_gradient"]    * gradient_cost +
+        cfg_w["w_aging"]       * aging_cost +
+        cfg_w["w_violation"]   * violation_cost
+    )
+    return float(total)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  BASELINE CONTROLLERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CCCVController(VoltageFeedbackCCCVController):
+    """
+    Canonical CC-CV baseline.
+
+    Uses one-step physics voltage feedback and dataset-derived V_max.
+    """
+    pass
+
+
+class BalancedCCCVController(BalancedVoltageFeedbackCCCVController):
+    """
+    Canonical actively-balanced CC-CV baseline.
+
+    Uses the same voltage-feedback constraint as CC-CV.
+    """
+    pass
+
+
+
+class SimpleMPCController:
+    """
+    Matched-budget direct-physics CEM baseline.
+
+    This comparator intentionally uses the SAME CEM search budget as the
+    graph-guided optimizer:
+
+        horizon       H = cfg["horizon"]
+        candidates    K = cfg["cem_samples"]
+        elite count       K * cfg["cem_elite_frac"]
+        iterations        cfg["cem_iterations"]
+        warm start        previous elite mean
+
+    The only substantive difference in the rollout evaluator is that this
+    controller evaluates every candidate directly with the ECM + thermal
+    plant rather than with PackGNN.
+
+    As in GraphGuidedOptimizer, one candidate is a per-cell current vector
+    held constant over the H-step rollout. This keeps the action search
+    space matched rather than giving either controller a larger H x N
+    decision space.
+    """
+
+    def __init__(
+        self,
+        cfg: dict,
+        horizon=None,
+        n_samples=None,
+    ):
+        self.cfg = cfg
+
+        self.horizon = int(
+            cfg["horizon"] if horizon is None else horizon
+        )
+
+        self.n_samples = int(
+            cfg["cem_samples"] if n_samples is None else n_samples
+        )
+
+        self.elite_frac = float(
+            cfg["cem_elite_frac"]
+        )
+
+        self.n_iterations = int(
+            cfg["cem_iterations"]
+        )
+
+        self._mu_prev = None
+
+        # Diagnostics for reproducibility / fairness audit.
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = None
+        self.last_iterations = None
+        self.last_horizon = None
+        self.last_best_cost = None
+        self.last_initial_mu = None
+        self.last_final_mu = None
+        self.last_used_warm_start = False
+
+    def reset(self):
+        self._mu_prev = None
+
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = None
+        self.last_iterations = None
+        self.last_horizon = None
+        self.last_best_cost = None
+        self.last_initial_mu = None
+        self.last_final_mu = None
+        self.last_used_warm_start = False
+
+    def _project_population(
+        self,
+        samples: np.ndarray,
+        pack: BatteryPackGraph,
+    ) -> np.ndarray:
+        """
+        Apply the same per-cell and pack-level actuator constraints used
+        by the graph-guided CEM.
+        """
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        I_max = self.cfg["I_max_C"] * Q_nom
+
+        samples = np.asarray(
+            samples,
+            dtype=np.float64,
+        )
+
+        samples = np.clip(
+            samples,
+            0.0,
+            I_max[None, :],
+        )
+
+        I_pack_max = (
+            self.cfg["I_pack_max_C"]
+            * Q_nom.sum()
+        )
+
+        pack_current = samples.sum(
+            axis=1,
+            keepdims=True,
+        )
+
+        scale = np.where(
+            pack_current > I_pack_max,
+            I_pack_max
+            / np.maximum(pack_current, 1e-12),
+            1.0,
+        )
+
+        return samples * scale
+
+    def _physics_rollout_cost(
+        self,
+        pack: BatteryPackGraph,
+        current_vector: np.ndarray,
+    ):
+        """
+        Direct H-step ECM + thermal rollout.
+
+        The same current vector is held across the prediction horizon,
+        matching the action parameterisation of GraphGuidedOptimizer.
+        """
+        virtual_pack = deepcopy(pack)
+
+        total_cost = 0.0
+        physics_steps = 0
+
+        for h in range(self.horizon):
+
+            currents = project_current_vector(
+                current_vector,
+                virtual_pack,
+                self.cfg,
+            )
+
+            metrics = virtual_pack.step(
+                currents,
+                dt=self.cfg["dt_s"],
+            )
+
+            physics_steps += 1
+
+            done = (
+                metrics["SOC_mean"]
+                >= self.cfg["target_soc"]
+            )
+
+            total_cost += compute_cost(
+                metrics,
+                self.cfg,
+                h,
+                done,
+            )
+
+            if done:
+                break
+
+        return float(total_cost), physics_steps
+
+    def _physics_safety_filter(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+        n_bisection: int = 24,
+    ) -> np.ndarray:
+        """
+        One-step ECM/thermal safety filter for the final action.
+
+        This mirrors the final-action safety shield used by
+        GraphGuidedOptimizer so that the canonical comparison differs
+        in the rollout evaluator, not in post-optimisation safety handling.
+        """
+        proposed = project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
+
+        def feasible(scale: float) -> bool:
+            virtual_pack = deepcopy(pack)
+
+            metrics = virtual_pack.step(
+                proposed * float(scale),
+                dt=self.cfg["dt_s"],
+            )
+
+            return int(
+                metrics["n_violations"]
+            ) == 0
+
+        if feasible(1.0):
+            return proposed.astype(
+                np.float32
+            )
+
+        if not feasible(0.0):
+            return np.zeros_like(
+                proposed,
+                dtype=np.float32,
+            )
+
+        lo = 0.0
+        hi = 1.0
+
+        for _ in range(
+            int(n_bisection)
+        ):
+            mid = 0.5 * (
+                lo + hi
+            )
+
+            if feasible(mid):
+                lo = mid
+            else:
+                hi = mid
+
+        return project_current_vector(
+            proposed * lo,
+            pack,
+            self.cfg,
+        )
+
+    def get_currents(
+        self,
+        pack: BatteryPackGraph,
+    ) -> np.ndarray:
+
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        I_max = (
+            self.cfg["I_max_C"]
+            * Q_nom
+        )
+
+        # Exactly the same initial-distribution policy as GraphGuidedOptimizer.
+        if self._mu_prev is not None:
+            mu = self._mu_prev.copy()
+            self.last_used_warm_start = True
+        else:
+            mu = I_max * 0.5
+            self.last_used_warm_start = False
+
+        sig = I_max / 3.0
+
+        self.last_initial_mu = mu.copy()
+
+        elite_k = max(
+            1,
+            int(
+                self.n_samples
+                * self.elite_frac
+            ),
+        )
+
+        self.last_candidate_evaluations = 0
+        self.last_physics_steps = 0
+        self.last_elite_k = elite_k
+        self.last_iterations = self.n_iterations
+        self.last_horizon = self.horizon
+
+        selected = mu.copy()
+        selected_cost = float("inf")
+
+        for cem_iter in range(
+            self.n_iterations
+        ):
+
+            samples = np.random.normal(
+                mu[None, :],
+                sig[None, :],
+                size=(
+                    self.n_samples,
+                    pack.n_cells,
+                ),
+            )
+
+            samples = self._project_population(
+                samples,
+                pack,
+            )
+
+            costs = np.empty(
+                self.n_samples,
+                dtype=np.float64,
+            )
+
+            for s_idx, sample in enumerate(
+                samples
+            ):
+                cost, n_steps = (
+                    self._physics_rollout_cost(
+                        pack,
+                        sample,
+                    )
+                )
+
+                costs[s_idx] = cost
+
+                self.last_candidate_evaluations += 1
+                self.last_physics_steps += n_steps
+
+            elite_idx = np.argsort(
+                costs
+            )[:elite_k]
+
+            elite = samples[
+                elite_idx
+            ]
+
+            elite_mean = elite.mean(
+                axis=0
+            )
+
+            elite_std = elite.std(
+                axis=0
+            ) + 1e-6
+
+            # Every candidate is already evaluated by the true physics model.
+            best_idx = int(
+                np.argmin(costs)
+            )
+
+            if costs[best_idx] < selected_cost:
+                selected_cost = float(
+                    costs[best_idx]
+                )
+                selected = samples[
+                    best_idx
+                ].copy()
+
+            mu = elite_mean
+            sig = elite_std
+
+        self._mu_prev = mu.copy()
+
+        self.last_final_mu = mu.copy()
+        self.last_best_cost = selected_cost
+
+        # CEM-selected direct-physics baseline.
+        I_base = project_current_vector(
+            selected,
+            pack,
+            self.cfg,
+        )
+
+        # Match GraphGuidedOptimizer's charging-pressure mechanism.
+        # The only substantive difference is how the next SOC is predicted:
+        # here it comes directly from one ECM/thermal plant step rather than
+        # from PackGNN.
+        prediction_pack = deepcopy(pack)
+
+        prediction_metrics = prediction_pack.step(
+            I_base,
+            dt=self.cfg["dt_s"],
+        )
+
+        soc_pred = np.asarray(
+            prediction_metrics["SOC"],
+            dtype=np.float64,
+        )
+
+        target = self.cfg["target_soc"]
+
+        deficit = np.maximum(
+            target - soc_pred,
+            0.0,
+        )
+
+        if deficit.sum() > 1e-6:
+            I_deficit = (
+                I_max
+                * deficit
+                / (
+                    deficit.max()
+                    + 1e-9
+                )
+            )
+
+            I_final = (
+                0.6 * I_base
+                + 0.4 * I_deficit
+            )
+        else:
+            I_final = I_base
+
+        I_final = project_current_vector(
+            I_final,
+            pack,
+            self.cfg,
+        )
+
+        return self._physics_safety_filter(
+            pack,
+            I_final,
+        )
+
+
+# Explicit scientific name while preserving the existing class/API name.
+PhysicsCEMController = SimpleMPCController
+
+
+class ProportionalController:
+    """
+    Proportional controller: current proportional to SOC deficit.
+    I_i ∝ (target_SOC - SOC_i)
+    """
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+
+    def reset(self):
+        pass
+
+    def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
+        # Capacity-aware per-cell limits, consistent with all other
+        # canonical controllers and the shared actuator projection.
+        Q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        I_max = (
+            self.cfg["I_max_C"]
+            * Q_nom
+        )
+
+        target = self.cfg["target_soc"]
+
+        socs = np.asarray(
+            [c.SOC for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        deficit = np.maximum(
+            target - socs,
+            0.0,
+        )
+
+        if deficit.sum() < 1e-6:
+            return np.zeros(
+                pack.n_cells,
+                dtype=np.float32,
+            )
+
+        # Preserve the original interpretable policy:
+        # cells with the largest SOC deficit receive their own
+        # maximum allowable C-rate current.
+        currents = (
+            I_max
+            * deficit
+            / (deficit.max() + 1e-9)
+        )
+
+        return project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GRAPH-GUIDED OPTIMIZER (Main Contribution)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GraphGuidedOptimizer:
+    """
+    MPC-based optimizer using PackGNN predictions + CEM optimisation.
+
+    Algorithm per control step:
+      1. Get current pack graph state (node + edge features)
+      2. PackGNN predicts SOC, ΔT, and aging-proxy outputs per cell
+      3. CEM samples candidate current vectors, evaluates rollout cost
+      4. Select elite samples, update distribution, repeat
+      5. Physics-check elite candidates, then apply the deficit-blended feasible current vector
+
+    The GNN is used as a fast surrogate model for multi-step rollout
+    within the CEM loop — avoiding expensive physics simulation per sample.
+    """
+    def __init__(self, cfg: dict, gnn: PackGNN):
+        self.cfg = cfg
+        self.gnn = gnn
+        self.gnn.eval()
+        self.device = next(gnn.parameters()).device
+        self._mu_prev = None  # warm-start state: previous step's elite mean
+
+    def reset(self):
+        self._mu_prev = None  # start each new episode from the uninformative prior
+
+    def _action_tensor(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+    ) -> torch.Tensor:
+        """
+        Convert candidate current [A] to the explicit per-cell PackGNN action.
+
+        u_i = I_i / I_i,max
+        """
+        q_nom = np.asarray(
+            [c.Q_nom_Ah for c in pack.cells],
+            dtype=np.float64,
+        )
+
+        i_max = (
+            float(self.cfg["I_max_C"])
+            * q_nom
+        )
+
+        action = np.asarray(
+            currents,
+            dtype=np.float64,
+        ) / (i_max + 1e-12)
+
+        action = np.clip(
+            action,
+            0.0,
+            1.0,
+        )
+
+        return torch.tensor(
+            action[:, None],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
+    def _gnn_rollout_cost(self, pack: BatteryPackGraph,
+                           current_seq: np.ndarray) -> float:
+        """
+        True multi-step GNN surrogate rollout (H steps).
+        current_seq: (H, n_cells) — action held constant or varying across H steps.
+        At each step: node features AND edge features are updated before
+        re-calling the GNN, giving genuine H-step look-ahead.
+        Returns estimated cumulative cost over H steps.
+        """
+        g = pack.to_torch_graph()
+        x          = g["x"].to(self.device)
+        edge_index = g["edge_index"].to(self.device)
+        edge_attr  = g["edge_attr"].to(self.device)
+
+        total_cost  = 0.0
+        soc_virtual = np.array([c.SOC  for c in pack.cells])
+        T_virtual   = np.array([c.T_C  for c in pack.cells])
+        Q_nom       = np.array([c.Q_nom_Ah for c in pack.cells])
+        I_max       = self.cfg["I_max_C"] * Q_nom
+        cfg         = self.cfg
+
+        reached_target = False  # tracks whether the virtual rollout has hit SOC*
+        with torch.no_grad():
+            for h in range(cfg["horizon"]):
+                I_h = current_seq[h]  # (n_cells,)
+
+                # Explicit candidate action u_t for the v2 causal surrogate.
+                action_t = self._action_tensor(
+                    pack,
+                    I_h,
+                )
+
+                out = self.gnn(
+                    x,
+                    edge_index,
+                    edge_attr,
+                    action_t,
+                )
+
+                soc_pred = (
+                    out["soc_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                dT_pred = (
+                    out["delta_T_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                aging_pred = (
+                    out["aging_pred"]
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
+
+                # PackGNN v2 directly predicts the next state conditioned
+                # on candidate action. No post-hoc Coulomb-counting blend
+                # or current-ratio temperature scaling is used here.
+                soc_virtual = np.clip(
+                    soc_pred,
+                    0.0,
+                    1.0,
+                )
+
+                T_virtual = (
+                    T_virtual
+                    + dT_pred
+                )
+
+                aging_step = float(
+                    np.sum(aging_pred)
+                )
+
+                # ── Time term: 1[SOC_bar_{t+h} < SOC*], matching Eq. 12 exactly ──
+                if not reached_target and float(np.mean(soc_virtual)) >= cfg["target_soc"]:
+                    reached_target = True
+                time_term = 0.0 if reached_target else 1.0
+
+                # ── Step cost (full objective, consistent with _cem_optimise) ──
+                soc_imb  = float(np.std(soc_virtual))
+                T_max_v  = float(np.max(T_virtual))
+                T_grad   = float(np.max(T_virtual) - np.min(T_virtual))
+                n_viol   = int(np.sum(soc_virtual >= 0.98) +
+                               np.sum(T_virtual   >= cfg["T_max"]))
+                # Surrogate stage cost mirrors compute_cost() for all
+                # quantities represented by PackGNN.
+                #
+                # Voltage violations cannot be inferred directly because the
+                # surrogate does not predict terminal voltage; those remain
+                # enforced by the downstream physics verification.
+                step_cost = (
+                    cfg["w_time"]        * time_term +
+                    cfg["w_imbalance"]   * soc_imb +
+                    cfg["w_temperature"] * max(T_max_v - 38.0, 0.0) / 10.0 +
+                    cfg["w_gradient"]    * T_grad / 10.0 +
+                    cfg["w_aging"]       * aging_step * 1e4 +
+                    cfg["w_violation"]   * n_viol
+                )
+                total_cost += step_cost
+
+                # ── Update node features for next GNN call ────────────────
+                x_np         = x.cpu().numpy().copy()
+                x_np[:, 0]   = soc_virtual                    # SOC
+                x_np[:, 1]   = (T_virtual - 25.0) / 30.0     # T_norm
+                x_np[:, 5]   = np.abs(I_h) / 10.0            # |I|_norm
+                x            = torch.tensor(x_np, dtype=torch.float32,
+                                            device=self.device)
+
+                # ── Update edge features for next GNN call ────────────────
+                soc_diffs  = soc_virtual[:-1] - soc_virtual[1:]
+                T_diffs    = T_virtual[:-1]   - T_virtual[1:]
+                e_attr_np  = edge_attr.cpu().numpy().copy()
+                half       = e_attr_np.shape[0] // 2
+                for e in range(half):
+                    e_attr_np[2*e,   0] = T_diffs[e]   / 10.0 if e < len(T_diffs)   else 0
+                    e_attr_np[2*e,   1] = soc_diffs[e]         if e < len(soc_diffs) else 0
+                    e_attr_np[2*e+1, 0] = -e_attr_np[2*e, 0]
+                    e_attr_np[2*e+1, 1] = -e_attr_np[2*e, 1]
+                edge_attr  = torch.tensor(e_attr_np, dtype=torch.float32,
+                                          device=self.device)
+
+        return total_cost
+
+    def _cem_optimise(self, pack: BatteryPackGraph) -> np.ndarray:
+        """
+        CEM with GNN as primary surrogate cost evaluator.
+
+        For each candidate current vector:
+          1. GNN predicts next-state (SOC, ΔT, aging) — O(1), no simulation
+          2. Physics simulation used only for elite samples (top-k)
+             to correct GNN drift and compute exact constraint violations.
+
+        This makes graph structure directly observable: GNN edge message
+        passing propagates thermal/SOC coupling between cells, giving
+        better predictions than node-only MLP.
+        """
+        n = pack.n_cells
+        Q_nom = np.array([c.Q_nom_Ah for c in pack.cells])
+        I_max = self.cfg["I_max_C"] * Q_nom
+        cfg   = self.cfg
+
+        if self._mu_prev is not None:
+            mu  = self._mu_prev.copy()   # warm-start from previous step's elite mean
+            sig = I_max / 3.0
+        else:
+            mu  = I_max * 0.5            # uninformative prior (t=0)
+            sig = I_max / 3.0
+
+        n_samples = cfg["cem_samples"]
+        elite_k   = max(1, int(n_samples * cfg["cem_elite_frac"]))
+
+        # Pre-compute graph tensors once (updated after each CEM iteration)
+        g          = pack.to_torch_graph()
+        x          = g["x"].to(self.device)
+        edge_index = g["edge_index"].to(self.device)
+        edge_attr  = g["edge_attr"].to(self.device)
+
+        for cem_iter in range(cfg["cem_iterations"]):
+            samples = np.random.normal(mu[None,:], sig[None,:],
+                                        size=(n_samples, n))
+            samples = np.clip(samples, 0.0, I_max[None,:])
+
+            # Pack current constraint
+            I_pack_max = cfg["I_pack_max_C"] * Q_nom.sum()
+            pack_curr  = samples.sum(axis=1, keepdims=True)
+            scale      = np.where(pack_curr > I_pack_max,
+                                   I_pack_max / pack_curr, 1.0)
+            samples   *= scale
+
+            costs = np.zeros(n_samples)
+            for s_idx, s in enumerate(samples):
+                # True multi-step GNN rollout: holds action s constant for H steps.
+                # _gnn_rollout_cost re-calls GNN with updated node+edge features
+                # at every horizon step, giving genuine H-step look-ahead.
+                current_seq = np.tile(s[None, :], (cfg["horizon"], 1))  # (H, N)
+                costs[s_idx] = self._gnn_rollout_cost(pack, current_seq)
+
+            # Elite selection
+            elite_idx  = np.argsort(costs)[:elite_k]
+            elite      = samples[elite_idx]
+            elite_mean = elite.mean(axis=0)
+
+            # ── Physics verification on top-3 elites (last iteration) ────
+            if cem_iter == cfg["cem_iterations"] - 1:
+                physics_costs = []
+                for s in elite[:3]:
+                    pack_copy = deepcopy(pack)
+                    metrics   = pack_copy.step(s, dt=cfg["dt_s"])
+                    physics_costs.append(compute_cost(metrics, cfg, 0, False))
+                # Re-rank top-3 by physics cost
+                best_idx = np.argmin(physics_costs)
+                selected = elite[best_idx]
+                self._mu_prev = elite_mean  # save for next control step's warm start
+                return selected.astype(np.float32)
+
+            mu  = elite_mean
+            sig = elite.std(axis=0) + 1e-6
+
+        return mu.astype(np.float32)
+
+    def _physics_safety_filter(
+        self,
+        pack: BatteryPackGraph,
+        currents: np.ndarray,
+        n_bisection: int = 24,
+    ) -> np.ndarray:
+        """
+        One-step plant-model safety filter for the final applied action.
+
+        The CEM elite is physics-checked before the deficit blend, but the
+        blended action itself is a different current vector. Therefore the
+        final action must be re-verified against the ECM/thermal plant before
+        application.
+
+        If the proposed action is unsafe, retain its cell-to-cell allocation
+        direction and find the largest scalar alpha in [0, 1] such that
+
+            alpha * I_proposed
+
+        produces zero one-step plant-model safety violations.
+
+        This filter does not claim formal recursive feasibility; it is a
+        one-step model-based safety check applied at every control update.
+        """
+        proposed = project_current_vector(
+            currents,
+            pack,
+            self.cfg,
+        )
+
+        def feasible(scale: float) -> bool:
+            pack_copy = deepcopy(pack)
+
+            metrics = pack_copy.step(
+                proposed * float(scale),
+                dt=self.cfg["dt_s"],
+            )
+
+            return int(
+                metrics["n_violations"]
+            ) == 0
+
+        # No modification when the actual final blended action is safe.
+        if feasible(1.0):
+            return proposed.astype(
+                np.float32
+            )
+
+        # Defensive fallback for an already-unsafe plant state.
+        if not feasible(0.0):
+            return np.zeros_like(
+                proposed,
+                dtype=np.float32,
+            )
+
+        lo = 0.0
+        hi = 1.0
+
+        for _ in range(
+            int(n_bisection)
+        ):
+            mid = 0.5 * (
+                lo + hi
+            )
+
+            if feasible(mid):
+                lo = mid
+            else:
+                hi = mid
+
+        filtered = (
+            proposed
+            * lo
+        )
+
+        return project_current_vector(
+            filtered,
+            pack,
+            self.cfg,
+        )
+
+    def get_currents(self, pack: BatteryPackGraph) -> np.ndarray:
+        """
+        CEM optimisation (see _cem_optimise) provides a physics-verified
+        baseline current, which is then blended with a GNN-predicted
+        SOC-deficit-proportional term (60% CEM / 40% deficit-driven).
+        This blend is a necessary component of the implemented controller:
+        empirically, applying the pure CEM output alone stalls well short
+        of the target SOC, because the cost terms that differentiate
+        between CEM candidates (SOC imbalance, thermal gradient, aging)
+        are all minimised by low current, and the horizon-bounded "time"
+        indicator term (Eq. 12) only discriminates between candidates once
+        the pack is close enough to reach the target within the H-step
+        rollout. The deficit-proportional term supplies the charging-speed
+        pressure that the stage cost alone does not provide over most of
+        the trajectory.
+        """
+        I_base = self._cem_optimise(pack)
+
+        g = pack.to_torch_graph()
+
+        with torch.no_grad():
+            action_base = self._action_tensor(
+                pack,
+                I_base,
+            )
+
+            out = self.gnn(
+                g["x"].to(self.device),
+                g["edge_index"].to(self.device),
+                g["edge_attr"].to(self.device),
+                action_base,
+            )
+        soc_pred = out["soc_pred"].cpu().numpy().flatten()
+
+        target  = self.cfg["target_soc"]
+        deficit = np.maximum(target - soc_pred, 0.0)
+        Q_nom   = np.array([c.Q_nom_Ah for c in pack.cells])
+        I_max   = self.cfg["I_max_C"] * Q_nom
+        I_pack_max = self.cfg["I_pack_max_C"] * Q_nom.sum()
+
+        if deficit.sum() > 1e-6:
+            I_gnn = I_max * deficit / (deficit.max() + 1e-9)
+            I_final = 0.6 * I_base + 0.4 * I_gnn
+        else:
+            I_final = I_base
+
+        # Shared actuator-feasibility projection, followed by an explicit
+        # one-step physics check of the ACTUAL blended action that will be
+        # applied to the plant.
+        I_final = project_current_vector(
+            I_final,
+            pack,
+            self.cfg,
+        )
+
+        return self._physics_safety_filter(
+            pack,
+            I_final,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  EPISODE RUNNER
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_episode(pack: BatteryPackGraph, controller,
+                cfg: dict, label: str,
+                verbose: bool = False) -> dict:
+    """
+    Run one charging episode until target SOC or max_steps reached.
+    Returns episode metrics dict.
+    """
+    # Keep plant violation accounting and controller constraints identical.
+    for cell in pack.cells:
+        if hasattr(cell, "V_min_limit"):
+            cell.V_min_limit = float(cfg["V_min"])
+        if hasattr(cell, "V_max_limit"):
+            cell.V_max_limit = float(cfg["V_max"])
+
+    controller.reset()
+    history = {
+        "SOC_mean": [], "SOC_imbalance": [], "T_max": [],
+        "T_gradient": [], "aging_cost_cum": [], "n_violations": [],
+        "pack_voltage": [], "cell_voltage_max": [], "currents_mean": [],
+    }
+    aging_cum = 0.0
+    violations_cum = 0
+
+    t0 = time.time()
+
+    for step in range(cfg["max_steps"]):
+        soc_mean = np.mean([c.SOC for c in pack.cells])
+        if step % 20 == 0:
+            print(f"    [{label}] step={step} SOC={soc_mean:.3f} "
+                  f"σ={np.std([c.SOC for c in pack.cells]):.4f}", flush=True)
+        if soc_mean >= cfg["target_soc"] - 0.005:
+            break
+
+        # Get control action
+        currents = controller.get_currents(pack)
+
+        # Apply to pack
+        metrics = pack.step(currents, dt=cfg["dt_s"])
+
+        aging_cum     += metrics["aging_cost"]
+        violations_cum += metrics["n_violations"]
+
+        history["SOC_mean"].append(metrics["SOC_mean"])
+        history["SOC_imbalance"].append(metrics["SOC_imbalance"])
+        history["T_max"].append(metrics["T_max"])
+        history["T_gradient"].append(metrics["T_gradient"])
+        history["aging_cost_cum"].append(aging_cum)
+        history["n_violations"].append(violations_cum)
+        history["pack_voltage"].append(pack.pack_voltage())
+        history["cell_voltage_max"].append(
+            float(max(c.V_term for c in pack.cells))
+        )
+        history["currents_mean"].append(float(np.mean(currents)))
+
+        if verbose and step % 10 == 0:
+            print(f"  [{label}] step={step:3d} SOC={metrics['SOC_mean']:.3f} "
+                  f"σ={metrics['SOC_imbalance']:.4f} T={metrics['T_max']:.1f}°C "
+                  f"aging={aging_cum:.5f}")
+
+    elapsed = time.time() - t0
+    steps_taken = len(history["SOC_mean"])
+    time_min = steps_taken * cfg["dt_s"] / 60.0
+
+    result = {
+        "label":             label,
+        "steps":             steps_taken,
+        "charging_time_min": round(time_min, 2),
+        "final_SOC":         round(float(np.mean([c.SOC for c in pack.cells])), 4),
+        "final_SOC_imbalance": round(float(np.std([c.SOC for c in pack.cells])), 5),
+        "final_T_max":       round(float(np.max([c.T_C for c in pack.cells])), 2),
+        "final_T_gradient":  round(float(np.max([c.T_C for c in pack.cells]) -
+                                         np.min([c.T_C for c in pack.cells])), 2),
+        "cumulative_aging":  round(aging_cum, 6),
+        "total_violations":  violations_cum,
+        "peak_cell_voltage": round(
+            max(history["cell_voltage_max"])
+            if history["cell_voltage_max"]
+            else max(c.V_term for c in pack.cells),
+            6,
+        ),
+        "wall_time_s":       round(elapsed, 2),
+        "history":           history,
+    }
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  MULTI-EPISODE EXPERIMENT
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_experiment(cfg: dict, ecm_parquet: Path,
+                   n_episodes: int, output_dir: Path) -> dict:
+    """
+    Run n_episodes for each controller and aggregate results.
+    """
+    cfg = apply_dataset_voltage_limits(
+        cfg,
+        repo_root=Path(__file__).resolve().parent.parent,
+    )
+
+    print(
+        f"  Voltage limits: {cfg['V_min']:.3f}--{cfg['V_max']:.3f} V "
+        f"[{cfg['voltage_limit_dataset']}; {cfg['voltage_limit_source']}]"
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Canonical submission model: explicit action-conditioned PackGNN v2.
+    gnn = PackGNN(
+        node_feat=7,
+        edge_feat=3,
+        hidden=64,
+        n_layers=3,
+        action_feat=1,
+    )
+
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
+    )
+
+    gnn = gnn.to(device)
+
+    gnn_paths = sorted(
+        MODELS_DIR.glob(
+            "pack_gnn_action_v2_*.pt"
+        )
+    )
+
+    if not gnn_paths:
+        raise FileNotFoundError(
+            "No action-conditioned PackGNN v2 checkpoint found in "
+            f"{MODELS_DIR}. Run train_gnn.py first. Legacy "
+            "pack_gnn_*.pt checkpoints are intentionally rejected."
+        )
+
+    ckpt_path = gnn_paths[-1]
+
+    ckpt = torch.load(
+        ckpt_path,
+        map_location=device,
+    )
+
+    if ckpt.get("model_format_version") != 2:
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path.name} is not PackGNN v2."
+        )
+
+    if not ckpt.get(
+        "action_conditioned",
+        False,
+    ):
+        raise RuntimeError(
+            f"Checkpoint {ckpt_path.name} is not action-conditioned."
+        )
+
+    gnn.load_state_dict(
+        ckpt["model_state"],
+        strict=True,
+    )
+
+    print(
+        f"  Loaded action-conditioned GNN v2: "
+        f"{ckpt_path.name}"
+    )
+
+    controllers = {
+        "CC-CV":            CCCVController(cfg),
+        "CC-CV-Balance":    BalancedCCCVController(cfg),
+        "SimpleMPC":        SimpleMPCController(cfg),
+        "Proportional":     ProportionalController(cfg),
+        "GraphOptimizer":   GraphGuidedOptimizer(cfg, gnn),
+    }
+
+    all_results = {name: [] for name in controllers}
+
+    print(f"\n  {'Controller':<20} {'Episodes':>8}")
+    print(f"  {'-'*32}")
+    for name in controllers:
+        print(f"  {name:<20} {'running...'}")
+
+    for ep in range(n_episodes):
+        # Canonical episode seed (matches the seed = 7 x episode_index
+        # protocol used throughout the rest of this study), now genuinely
+        # propagated into build_pack_from_ecm()'s pack initialisation.
+        episode_seed = 7 * ep
+
+        for name, ctrl in controllers.items():
+            np.random.seed(episode_seed)
+            torch.manual_seed(episode_seed)
+
+            pack = build_pack_from_ecm(
+                ecm_parquet,
+                n_cells   = cfg["n_cells"],
+                chemistry = cfg["chemistry"],
+                T_amb     = cfg["T_amb"],
+                soc_init  = cfg["soc_init"],
+                soc_noise = cfg["soc_noise"],
+                seed      = episode_seed,
+            )
+
+            result = run_episode(pack, ctrl, cfg, name, verbose=False)
+            all_results[name].append(result)
+
+        if (ep + 1) % 5 == 0 or ep == 0:
+            print(f"  Episode {ep+1}/{n_episodes} complete")
+
+    # Aggregate statistics
+    agg = {}
+    for name, results in all_results.items():
+        keys = ["charging_time_min", "final_SOC_imbalance",
+                "final_T_max", "final_T_gradient",
+                "cumulative_aging", "total_violations"]
+        agg[name] = {}
+        for k in keys:
+            vals = [r[k] for r in results]
+            agg[name][k + "_mean"] = round(float(np.mean(vals)), 4)
+            agg[name][k + "_std"]  = round(float(np.std(vals)),  4)
+
+    # Print summary table
+    print(f"\n{'═'*80}")
+    print(f"  RESULTS SUMMARY  ({n_episodes} episodes, {cfg['n_cells']}-cell "
+          f"{cfg['chemistry']} pack → SOC {cfg['soc_init']:.0%}→{cfg['target_soc']:.0%})")
+    print(f"{'═'*80}")
+    hdr = f"  {'Controller':<22} {'Time(min)':>10} {'σ_SOC':>9} {'T_max':>8} {'ΔT':>7} {'Aging':>10} {'Viol':>6}"
+    print(hdr)
+    print(f"  {'-'*75}")
+    for name, a in agg.items():
+        print(
+            f"  {name:<22} "
+            f"{a['charging_time_min_mean']:>8.1f}±{a['charging_time_min_std']:<5.1f} "
+            f"{a['final_SOC_imbalance_mean']:>7.4f} "
+            f"{a['final_T_max_mean']:>7.1f} "
+            f"{a['final_T_gradient_mean']:>6.2f} "
+            f"{a['cumulative_aging_mean']:>10.6f} "
+            f"{a['total_violations_mean']:>5.1f}"
+        )
+
+    # Save results
+    out = {
+        "config": cfg,
+        "timestamp": timestamp,
+        "n_episodes": n_episodes,
+        "aggregate": agg,
+        "raw_results": {name: [
+            {k: v for k, v in r.items() if k != "history"}
+            for r in results
+        ] for name, results in all_results.items()},
+        "histories": {name: [r["history"] for r in results]
+                      for name, results in all_results.items()},
+    }
+
+    out_path = output_dir / f"experiment_results_{timestamp}.json"
+    with open(out_path, "w") as f:
+        json.dump(out, f, indent=2, default=str)
+    print(f"\n  ✅ Results saved → {out_path}")
+
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════════════════════════
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Safe Fast Charging Optimizer — Dynamic Graph Battery Pack"
+    )
+    parser.add_argument("--n_cells",     type=int,   default=12)
+    parser.add_argument("--chemistry",   type=str,   default="LFP")
+    parser.add_argument("--target_soc",  type=float, default=0.80)
+    parser.add_argument("--soc_init",    type=float, default=0.20)
+    parser.add_argument("--soc_noise",   type=float, default=0.03)
+    parser.add_argument("--I_max_C",     type=float, default=3.0,
+                        help="Max C-rate per cell")
+    parser.add_argument("--n_episodes",  type=int,   default=30,
+                        help="Episodes per controller")
+    parser.add_argument("--output_dir",  type=str,   default="results/optimizer")
+    parser.add_argument("--ecm_parquet", type=str, default=None,
+                        help="Path to ECM parquet file. Auto-detected if None.")
+    parser.add_argument("--w_time",      type=float, default=None)
+    parser.add_argument("--w_imbalance", type=float, default=None)
+    args = parser.parse_args()
+
+    # Auto-detect ECM parquet
+    ecm_parquet = None
+    if args.ecm_parquet:
+        ecm_parquet = Path(args.ecm_parquet)
+    else:
+        candidates = sorted((Path(__file__).parent.parent / "results" / "ecm").glob("ecm_params_*.parquet"))
+        if candidates:
+            ecm_parquet = candidates[-1]
+            print(f"  Auto-detected ECM parquet: {ecm_parquet.name}")
+
+    cfg = default_config()
+    cfg["n_cells"]    = args.n_cells
+    cfg["chemistry"]  = args.chemistry
+    cfg["target_soc"] = args.target_soc
+    cfg["soc_init"]   = args.soc_init
+    cfg["soc_noise"]  = args.soc_noise
+    cfg["I_max_C"]    = args.I_max_C
+
+    print("=" * 70)
+    print("  Safe Fast Charging Optimizer — Dynamic Graph Battery Pack")
+    print("=" * 70)
+    print(f"  Pack     : {cfg['n_cells']} cells | chemistry={cfg['chemistry']}")
+    print(f"  SOC      : {cfg['soc_init']:.0%} → {cfg['target_soc']:.0%}")
+    print(f"  I_max    : {cfg['I_max_C']}C")
+    print(f"  Episodes : {args.n_episodes}")
+    print(f"  ECM data : {ecm_parquet}")
+
+    out = run_experiment(
+        cfg,
+        ecm_parquet  = ecm_parquet,
+        n_episodes   = args.n_episodes,
+        output_dir   = Path(args.output_dir),
+    )
+
+    print("\n  ✅ Experiment complete!")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    # Fix missing dataclass import
+    from dataclasses import dataclass
+    main()

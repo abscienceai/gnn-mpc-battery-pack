@@ -1,0 +1,56 @@
+{
+  "checkpoint": "results/models/pack_gnn_action_v2_20261003_232518.pt",
+  "heldout_master_seed": 73,
+  "n_rollouts": 500,
+  "n_samples": 2901,
+  "n_unique_pack_seeds": 500,
+  "training_seed_overlap": 0,
+  "canonical_eval_seed_overlap": 0,
+  "summary": {
+    "normal": {
+      "soc_mae_fraction": 0.0008986631943569373,
+      "soc_mae_percent": 0.08986631943569373,
+      "dT_mae_C": 0.03440489689169419
+    },
+    "zero": {
+      "soc_mae_fraction": 0.023160607328290752,
+      "soc_mae_percent": 2.316060732829075,
+      "dT_mae_C": 0.11754361900135936
+    },
+    "shuffled": {
+      "soc_mae_fraction": 0.008796442606228269,
+      "soc_mae_percent": 0.8796442606228269,
+      "dT_mae_C": 0.08215262710657105
+    },
+    "zero_minus_normal_soc": {
+      "mean_difference": 0.022261944133933818,
+      "ci95_low": 0.02183888787845427,
+      "ci95_high": 0.022673573937059623,
+      "fraction_altered_worse": 0.8938297138917615
+    },
+    "shuffle_minus_normal_soc": {
+      "mean_difference": 0.007897779411871331,
+      "ci95_low": 0.007760522298770783,
+      "ci95_high": 0.00803549750929332,
+      "fraction_altered_worse": 0.8938297138917615
+    },
+    "zero_minus_normal_dT": {
+      "mean_difference": 0.08313872210966518,
+      "ci95_low": 0.08019844054321748,
+      "ci95_high": 0.08625771567308203,
+      "fraction_altered_worse": 0.8193726301275422
+    },
+    "shuffle_minus_normal_dT": {
+      "mean_difference": 0.04774773021487687,
+      "ci95_low": 0.04606485094342019,
+      "ci95_high": 0.04941705039568564,
+      "fraction_altered_worse": 0.8369527749052051
+    },
+    "prediction_sensitivity": {
+      "normal_vs_zero_soc": 0.02303302725337212,
+      "normal_vs_zero_dT": 0.10550516075976334,
+      "normal_vs_shuffled_soc": 0.008599876363959801,
+      "normal_vs_shuffled_dT": 0.06739682020148874
+    }
+  }
+}

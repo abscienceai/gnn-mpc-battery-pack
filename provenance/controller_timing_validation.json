@@ -1,0 +1,58 @@
+{
+  "description": "Software controller timing / pseudo-HIL deadline feasibility test",
+  "not_hardware_HIL": true,
+  "control_interval_s": 60.0,
+  "n_paired_states": 30,
+  "state_SOC_levels": [
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7
+  ],
+  "git_head": "210663b76ba2911f6ea5bce08c84ae5a47dc3936",
+  "checkpoint_sha256": "2f3acc96e77504be0a060f5bee9bb2263b62df08c8fcd2afca353005c02e0b5f",
+  "ecm_sha256": "5580ff78d2518c645588d5bdd58ace96507e14bb2622dd6e26cf080397d94988",
+  "python": "3.10.12 (main, Aug 31 2026, 10:18:17) [GCC 11.4.0]",
+  "platform": "Linux-5.15.0-191-generic-x86_64-with-glibc2.35",
+  "cpu_model": "Intel(R) Xeon(R) Gold 6430",
+  "gpu": {
+    "name": "NVIDIA L40S",
+    "torch_cuda": "12.1",
+    "allocated_GB": 0.008866816,
+    "reserved_GB": 0.023068672
+  },
+  "timed_region": "controller.get_currents plus common actuator projection, with CUDA synchronization before and after timing",
+  "summary": [
+    {
+      "controller": "Physics-CEM",
+      "n": 30,
+      "mean_s": 0.585712411107185,
+      "median_s": 0.601888878038153,
+      "p95_s": 0.618121724599041,
+      "p99_s": 0.6200440409220755,
+      "max_s": 0.6203001411631703,
+      "deadline_s": 60.0,
+      "deadline_misses": 0,
+      "deadline_success_pct": 100.0,
+      "p95_deadline_utilization_pct": 1.030202874331735,
+      "max_deadline_utilization_pct": 1.0338335686052837
+    },
+    {
+      "controller": "GraphOptimizer",
+      "n": 30,
+      "mean_s": 2.073786427259135,
+      "median_s": 2.076261591981165,
+      "p95_s": 2.1096593408379705,
+      "p99_s": 2.122699974635616,
+      "max_s": 2.127067804103717,
+      "deadline_s": 60.0,
+      "deadline_misses": 0,
+      "deadline_success_pct": 100.0,
+      "p95_deadline_utilization_pct": 3.5160989013966173,
+      "max_deadline_utilization_pct": 3.5451130068395287
+    }
+  ],
+  "claim_boundary": "Results demonstrate software deadline feasibility only on the reported compute platform for the 60 s study control interval; they do not constitute hardware-in-the-loop or embedded real-time validation."
+}
